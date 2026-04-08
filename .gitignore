@@ -1,0 +1,9 @@
+build
+install
+log
+.vscode
+__pycache__/
+*.pyc
+.codex
+.codex/
+IR.LaTeX.template.tex
