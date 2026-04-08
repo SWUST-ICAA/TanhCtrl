@@ -22,18 +22,27 @@ target_include_directories(tanh_ctrl_core PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-add_executable(tanh_ctrl_node
+add_library(tanh_ctrl_node_lib
   src/tanh_ctrl_node.cpp
 )
 
-target_link_libraries(tanh_ctrl_node tanh_ctrl_core)
-ament_target_dependencies(tanh_ctrl_node
+target_link_libraries(tanh_ctrl_node_lib tanh_ctrl_core)
+ament_target_dependencies(tanh_ctrl_node_lib
   rclcpp
   px4_msgs
   std_msgs
 )
 
-install(TARGETS tanh_ctrl_core tanh_ctrl_node
+add_executable(tanh_ctrl_node
+  src/tanh_ctrl_node_main.cpp
+)
+
+target_link_libraries(tanh_ctrl_node tanh_ctrl_node_lib)
+ament_target_dependencies(tanh_ctrl_node
+  rclcpp
+)
+
+install(TARGETS tanh_ctrl_core tanh_ctrl_node_lib tanh_ctrl_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -46,5 +55,17 @@ install(DIRECTORY include/
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(tanh_ctrl_node_topics_test
+    test/tanh_ctrl_node_topics_test.cpp
+  )
+  target_link_libraries(tanh_ctrl_node_topics_test tanh_ctrl_node_lib)
+  ament_target_dependencies(tanh_ctrl_node_topics_test
+    rclcpp
+  )
+endif()
 
 ament_package()

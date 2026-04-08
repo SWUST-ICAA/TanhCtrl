@@ -41,6 +41,21 @@ bool isFiniteVec3(const Array3T & values)
   return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
 }
 
+constexpr char kSensorCombinedTopic[] = "/fmu/out/sensor_combined";
+constexpr char kVehicleOdometryTopic[] = "/fmu/out/vehicle_odometry";
+constexpr char kVehicleStatusV1Topic[] = "/fmu/out/vehicle_status_v1";
+constexpr char kActuatorMotorsTopic[] = "/fmu/in/actuator_motors";
+constexpr char kOffboardControlModeTopic[] = "/fmu/in/offboard_control_mode";
+constexpr char kVehicleCommandTopic[] = "/fmu/in/vehicle_command";
+constexpr char kVehicleThrustSetpointTopic[] = "/fmu/in/vehicle_thrust_setpoint";
+constexpr bool kPublishOffboardControlMode = true;
+constexpr bool kPublishVehicleThrustSetpoint = true;
+constexpr bool kAutoOffboard = true;
+constexpr bool kAutoArm = false;
+constexpr int kOffboardWarmup = 10;
+constexpr double kAllocationBeta = 0.78539816339;
+constexpr std::array<int, 4> kMotorOutputMap{{1, 3, 0, 2}};
+
 }  // namespace
 
 tanh_ctrl_node::tanh_ctrl_node(const rclcpp::NodeOptions & options)
@@ -53,25 +68,11 @@ tanh_ctrl_node::tanh_ctrl_node(const rclcpp::NodeOptions & options)
 
 void tanh_ctrl_node::declareParameters()
 {
-  this->declare_parameter<std::string>("topics.sensor_combined", "/fmu/out/sensor_combined");
-  this->declare_parameter<std::string>("topics.vehicle_odometry", "/fmu/out/vehicle_odometry");
-  this->declare_parameter<std::string>("topics.vehicle_status_v1", "/fmu/out/vehicle_status_v1");
   this->declare_parameter<std::string>(
     "topics.trajectory_setpoint", "/tanh_ctrl/trajectory_setpoint");
-  this->declare_parameter<std::string>("topics.actuator_motors", "/fmu/in/actuator_motors");
-  this->declare_parameter<std::string>(
-    "topics.offboard_control_mode", "/fmu/in/offboard_control_mode");
-  this->declare_parameter<std::string>("topics.vehicle_command", "/fmu/in/vehicle_command");
-  this->declare_parameter<std::string>(
-    "topics.vehicle_thrust_setpoint", "/fmu/in/vehicle_thrust_setpoint");
   this->declare_parameter<std::string>("topics.start_tracking", "/mission/start_tracking");
 
   this->declare_parameter<double>("control_rate_hz", 100.0);
-  this->declare_parameter<bool>("publish_offboard_control_mode", true);
-  this->declare_parameter<bool>("publish_vehicle_thrust_setpoint", true);
-  this->declare_parameter<bool>("auto_offboard", false);
-  this->declare_parameter<bool>("auto_arm", false);
-  this->declare_parameter<int>("offboard_warmup", 10);
   this->declare_parameter<double>("mission.takeoff_target_z", -2.0);
   this->declare_parameter<double>("mission.takeoff_z_threshold", 0.2);
   this->declare_parameter<double>("mission.takeoff_hold_time_s", 2.0);
@@ -80,6 +81,7 @@ void tanh_ctrl_node::declareParameters()
 
   this->declare_parameter<double>("model.mass", 2.0643076923076915);
   this->declare_parameter<double>("model.gravity", 9.81);
+  this->declare_parameter<double>("model.force_max", 8.54858);
   this->declare_parameter<std::vector<double>>(
     "model.inertia_diag", {0.02384669, 0.02394962, 0.04399995});
 
@@ -128,10 +130,7 @@ void tanh_ctrl_node::declareParameters()
     "filters.angular_velocity_disturbance_cutoff_hz", 0.0);
 
   this->declare_parameter<double>("allocation.l", 0.246073);
-  this->declare_parameter<double>("allocation.beta", M_PI_4);
   this->declare_parameter<double>("allocation.cq_ct", 0.016);
-  this->declare_parameter<double>("motor.force_max", 8.54858);
-  this->declare_parameter<std::vector<int64_t>>("motor.output_map", {1, 3, 0, 2});
 }
 
 void tanh_ctrl_node::createRosInterfaces()
@@ -188,25 +187,22 @@ void tanh_ctrl_node::loadParams()
 
 void tanh_ctrl_node::loadGeneralParams()
 {
-  topic_sensor_combined_ = this->get_parameter("topics.sensor_combined").as_string();
-  topic_vehicle_odometry_ = this->get_parameter("topics.vehicle_odometry").as_string();
-  topic_vehicle_status_v1_ = this->get_parameter("topics.vehicle_status_v1").as_string();
+  topic_sensor_combined_ = kSensorCombinedTopic;
+  topic_vehicle_odometry_ = kVehicleOdometryTopic;
+  topic_vehicle_status_v1_ = kVehicleStatusV1Topic;
   topic_trajectory_setpoint_ = this->get_parameter("topics.trajectory_setpoint").as_string();
-  topic_actuator_motors_ = this->get_parameter("topics.actuator_motors").as_string();
-  topic_offboard_control_mode_ = this->get_parameter("topics.offboard_control_mode").as_string();
-  topic_vehicle_command_ = this->get_parameter("topics.vehicle_command").as_string();
-  topic_vehicle_thrust_setpoint_ =
-    this->get_parameter("topics.vehicle_thrust_setpoint").as_string();
+  topic_actuator_motors_ = kActuatorMotorsTopic;
+  topic_offboard_control_mode_ = kOffboardControlModeTopic;
+  topic_vehicle_command_ = kVehicleCommandTopic;
+  topic_vehicle_thrust_setpoint_ = kVehicleThrustSetpointTopic;
   topic_start_tracking_ = this->get_parameter("topics.start_tracking").as_string();
 
   control_rate_hz_ = this->get_parameter("control_rate_hz").as_double();
-  publish_offboard_control_mode_ =
-    this->get_parameter("publish_offboard_control_mode").as_bool();
-  publish_vehicle_thrust_setpoint_ =
-    this->get_parameter("publish_vehicle_thrust_setpoint").as_bool();
-  enable_auto_offboard_ = this->get_parameter("auto_offboard").as_bool();
-  enable_auto_arm_ = this->get_parameter("auto_arm").as_bool();
-  offboard_setpoint_warmup_ = this->get_parameter("offboard_warmup").as_int();
+  publish_offboard_control_mode_ = kPublishOffboardControlMode;
+  publish_vehicle_thrust_setpoint_ = kPublishVehicleThrustSetpoint;
+  enable_auto_offboard_ = kAutoOffboard;
+  enable_auto_arm_ = kAutoArm;
+  offboard_setpoint_warmup_ = kOffboardWarmup;
 
   mission_takeoff_target_z_ = this->get_parameter("mission.takeoff_target_z").as_double();
   mission_takeoff_z_threshold_ =
@@ -324,38 +320,17 @@ void tanh_ctrl_node::loadAllocationParams()
 {
   AllocationParams params;
   params.l = this->get_parameter("allocation.l").as_double();
-  params.beta = this->get_parameter("allocation.beta").as_double();
+  params.beta = kAllocationBeta;
   params.cq_ct = this->get_parameter("allocation.cq_ct").as_double();
   controller_.setAllocationParams(params);
 
-  motor_force_max_ = this->get_parameter("motor.force_max").as_double();
+  motor_force_max_ = this->get_parameter("model.force_max").as_double();
   controller_.setMotorForceMax(motor_force_max_);
 }
 
 void tanh_ctrl_node::loadMotorOutputMap()
 {
-  const auto mapping = this->get_parameter("motor.output_map").as_integer_array();
-  if (mapping.size() != 4) {
-    RCLCPP_WARN(this->get_logger(), "motor.output_map长度不是4，回退为默认映射");
-    motor_output_map_ = {{1, 3, 0, 2}};
-    return;
-  }
-
-  std::array<bool, 4> used{{false, false, false, false}};
-  std::array<int, 4> parsed_map{{1, 3, 0, 2}};
-
-  for (size_t index = 0; index < parsed_map.size(); ++index) {
-    const int motor_index = static_cast<int>(mapping[index]);
-    if (motor_index < 0 || motor_index >= 4 || used[motor_index]) {
-      RCLCPP_WARN(this->get_logger(), "motor.output_map无效，回退为默认映射");
-      motor_output_map_ = {{1, 3, 0, 2}};
-      return;
-    }
-    used[motor_index] = true;
-    parsed_map[index] = motor_index;
-  }
-
-  motor_output_map_ = parsed_map;
+  motor_output_map_ = kMotorOutputMap;
 }
 
 Eigen::Vector3d tanh_ctrl_node::getVec3Param(rclcpp::Node & node, const std::string & name)
@@ -877,11 +852,3 @@ void tanh_ctrl_node::controlLoop()
 }
 
 }  // namespace tanh_ctrl
-
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<tanh_ctrl::tanh_ctrl_node>());
-  rclcpp::shutdown();
-  return 0;
-}

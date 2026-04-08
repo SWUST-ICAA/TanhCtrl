@@ -69,6 +69,8 @@ public:
    */
   void setMotorForceMax(double max_force);
 
+  const AllocationParams & getAllocationParams() const { return alloc_; }
+
   /**
    * @brief Set the maximum tilt used by the outer loop.
    *

@@ -70,6 +70,25 @@ public:
    */
   explicit tanh_ctrl_node(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
+  const std::string & sensorCombinedTopic() const { return topic_sensor_combined_; }
+  const std::string & vehicleOdometryTopic() const { return topic_vehicle_odometry_; }
+  const std::string & vehicleStatusV1Topic() const { return topic_vehicle_status_v1_; }
+  const std::string & actuatorMotorsTopic() const { return topic_actuator_motors_; }
+  const std::string & offboardControlModeTopic() const { return topic_offboard_control_mode_; }
+  const std::string & vehicleCommandTopic() const { return topic_vehicle_command_; }
+  const std::string & vehicleThrustSetpointTopic() const
+  {
+    return topic_vehicle_thrust_setpoint_;
+  }
+  bool publishOffboardControlModeEnabled() const { return publish_offboard_control_mode_; }
+  bool publishVehicleThrustSetpointEnabled() const { return publish_vehicle_thrust_setpoint_; }
+  bool autoOffboardEnabled() const { return enable_auto_offboard_; }
+  bool autoArmEnabled() const { return enable_auto_arm_; }
+  int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
+  double motorForceMax() const { return motor_force_max_; }
+  std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
+  double allocationBeta() const { return controller_.getAllocationParams().beta; }
+
 private:
   /**
    * @brief Declare all configurable ROS parameters.
@@ -332,7 +351,7 @@ private:
   // Output permutation: out[i] = internal[motor_output_map_[i]]
   std::array<int, 4> motor_output_map_{{1, 3, 0, 2}};
 
-  bool enable_auto_offboard_{false};
+  bool enable_auto_offboard_{true};
   bool enable_auto_arm_{false};
   int offboard_setpoint_warmup_{10};
   int offboard_counter_{0};
