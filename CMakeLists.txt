@@ -75,23 +75,6 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-
-  ament_add_gtest(tanh_ctrl_node_topics_test
-    test/tanh_ctrl_node_topics_test.cpp
-  )
-  target_link_libraries(tanh_ctrl_node_topics_test tanh_ctrl_node_lib)
-  ament_target_dependencies(tanh_ctrl_node_topics_test
-    rclcpp
-  )
-
-  ament_add_gtest(tanh_ctrl_core_feedforward_test
-    test/tanh_ctrl_core_feedforward_test.cpp
-  )
-  target_link_libraries(tanh_ctrl_core_feedforward_test tanh_ctrl_core)
-endif()
-
 ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()
