@@ -242,11 +242,11 @@ def figure_eight_ned(
 ) -> TrajectorySample:
     omega = omega_from_period(period_s)
     x = center_ned[0] + x_amplitude * math.sin(omega * t)
-    y = center_ned[1] + y_amplitude * math.sin(3.0 * omega * t)
+    y = center_ned[1] + y_amplitude * math.sin(2.0 * omega * t)
     vx = x_amplitude * omega * math.cos(omega * t)
-    vy = 3.0 * y_amplitude * omega * math.cos(3.0 * omega * t)
+    vy = 2.0 * y_amplitude * omega * math.cos(2.0 * omega * t)
     ax = -x_amplitude * omega * omega * math.sin(omega * t)
-    ay = -9.0 * y_amplitude * omega * omega * math.sin(3.0 * omega * t)
+    ay = -4.0 * y_amplitude * omega * omega * math.sin(2.0 * omega * t)
     return (
         np.array([x, y, z_ned], dtype=float),
         np.array([vx, vy, 0.0], dtype=float),
@@ -290,13 +290,13 @@ def tilted_figure_eight_ned(
 ) -> TrajectorySample:
     omega = omega_from_period(period_s)
     position_local = np.array(
-        [x_amplitude * math.sin(omega * t), y_amplitude * math.sin(3.0 * omega * t), 0.0],
+        [x_amplitude * math.sin(omega * t), y_amplitude * math.sin(2.0 * omega * t), 0.0],
         dtype=float,
     )
     velocity_local = np.array(
         [
             x_amplitude * omega * math.cos(omega * t),
-            3.0 * y_amplitude * omega * math.cos(3.0 * omega * t),
+            2.0 * y_amplitude * omega * math.cos(2.0 * omega * t),
             0.0,
         ],
         dtype=float,
@@ -304,7 +304,7 @@ def tilted_figure_eight_ned(
     acceleration_local = np.array(
         [
             -x_amplitude * omega * omega * math.sin(omega * t),
-            -9.0 * y_amplitude * omega * omega * math.sin(3.0 * omega * t),
+            -4.0 * y_amplitude * omega * omega * math.sin(2.0 * omega * t),
             0.0,
         ],
         dtype=float,

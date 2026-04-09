@@ -16,11 +16,11 @@ flatness_reference_publisher:
       # Reference publication rate
       publish_rate_hz: 100.0
       # Options: circle / figure_eight / tilted_circle / tilted_figure_eight
-      trajectory_type: circle
+      trajectory_type: figure_eight
       # Radius for circle and tilted_circle trajectories
-      radius: 5.0
+      radius: 2.0
       # Tangential speed for circular motion
-      speed: 2.0
+      speed: 1.0
       # Period for figure-eight trajectories
       period_s: 8.0
       # X-axis amplitude for figure-eight trajectories
