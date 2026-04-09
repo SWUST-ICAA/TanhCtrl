@@ -18,9 +18,9 @@ flatness_reference_publisher:
       # Options: circle / figure_eight / tilted_circle / tilted_figure_eight
       trajectory_type: circle
       # Radius for circle and tilted_circle trajectories
-      radius: 1.5
+      radius: 5.0
       # Tangential speed for circular motion
-      speed: 1.0
+      speed: 2.0
       # Period for figure-eight trajectories
       period_s: 8.0
       # X-axis amplitude for figure-eight trajectories
@@ -32,6 +32,6 @@ flatness_reference_publisher:
       # Tilt angle about the x-axis for tilted trajectories
       tilt_angle_deg: 15.0
       # Yaw mode: track_velocity or fixed
-      yaw_mode: track_velocity
+      yaw_mode: fixed
       # Speed ramp-up time after start to avoid aggressive initial motion
-      speed_ramp_time_s: 2.0
+      speed_ramp_time_s: 10.0
