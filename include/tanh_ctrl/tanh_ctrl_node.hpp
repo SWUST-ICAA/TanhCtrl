@@ -88,6 +88,7 @@ public:
   int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
   double motorForceMax() const { return motor_force_max_; }
   double thrustModelFactor() const { return thrust_model_factor_; }
+  const PositionGains & positionGains() const { return controller_.getPositionGains(); }
   std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
   double allocationBeta() const { return controller_.getAllocationParams().beta; }
 

@@ -95,9 +95,11 @@ void tanh_ctrl_node::declareParameters()
   this->declare_parameter<double>("position.vertical.K_V", 0.5);
   this->declare_parameter<double>("position.horizontal.K_Acceleration", 1.1);
   this->declare_parameter<double>("position.vertical.K_Acceleration", 1.0);
+  this->declare_parameter<double>("position.horizontal.observer.P_V", 0.0);
+  this->declare_parameter<double>("position.vertical.observer.P_V", 0.0);
+  this->declare_parameter<double>("position.horizontal.observer.L_V", 5.0);
+  this->declare_parameter<double>("position.vertical.observer.L_V", 5.0);
   this->declare_parameter<double>("position.max_tilt_deg", 35.0);
-  this->declare_parameter<std::vector<double>>("position.observer.P_V", {0.0, 0.0, 0.0});
-  this->declare_parameter<std::vector<double>>("position.observer.L_V", {5.0, 5.0, 5.0});
 
   this->declare_parameter<double>("attitude.tilt.M_Angle", 3.0);
   this->declare_parameter<double>("attitude.yaw.M_Angle", 3.0);
@@ -247,8 +249,12 @@ void tanh_ctrl_node::loadPositionParams()
   gains.K_Acceleration = planarAxisVec(
     this->get_parameter("position.horizontal.K_Acceleration").as_double(),
     this->get_parameter("position.vertical.K_Acceleration").as_double());
-  gains.P_V = getVec3Param(*this, "position.observer.P_V");
-  gains.L_V = getVec3Param(*this, "position.observer.L_V");
+  gains.P_V = planarAxisVec(
+    this->get_parameter("position.horizontal.observer.P_V").as_double(),
+    this->get_parameter("position.vertical.observer.P_V").as_double());
+  gains.L_V = planarAxisVec(
+    this->get_parameter("position.horizontal.observer.L_V").as_double(),
+    this->get_parameter("position.vertical.observer.L_V").as_double());
   controller_.setPositionGains(gains);
 
   const double max_tilt_deg = this->get_parameter("position.max_tilt_deg").as_double();

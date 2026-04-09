@@ -76,6 +76,7 @@ public:
    */
   void setThrustModelFactor(double thrust_model_factor);
 
+  const PositionGains & getPositionGains() const { return pos_gains_; }
   const AllocationParams & getAllocationParams() const { return alloc_; }
 
   /**

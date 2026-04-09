@@ -31,16 +31,19 @@ tanh_ctrl:
         M_V: 8.0
         K_V: 0.5
         K_Acceleration: 1.1
+        observer:
+          P_V: 1.5
+          L_V: 1.5
       vertical:
         M_P: 2.0
         K_P: 1.0
         M_V: 6.5
         K_V: 0.5
         K_Acceleration: 1.0
+        observer:
+          P_V: 2.5
+          L_V: 2.5
       max_tilt_deg: 35.0
-      observer:
-        P_V: [1.5, 1.5, 2.5]
-        L_V: [1.5, 1.5, 2.5]
 
     attitude:
       tilt:
