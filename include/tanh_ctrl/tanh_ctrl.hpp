@@ -10,7 +10,7 @@
 namespace tanh_ctrl {
 
 /**
- * @brief Tanh feedback controller with differential-flatness attitude feedforward.
+ * @brief Tanh feedback controller for quadrotor position and attitude stabilization.
  */
 class tanh_ctrl
 {
@@ -185,7 +185,7 @@ private:
    * @brief Run the attitude loop and angular disturbance observer.
    *
    * @param state Current state.
-   * @param attitude_reference Desired attitude and body-rate feedforward.
+   * @param attitude_reference Desired attitude reconstructed from the outer loop.
    * @param dt Sample period [s].
    * @param[out] torque_body Desired body torque in FRD [N*m].
    */

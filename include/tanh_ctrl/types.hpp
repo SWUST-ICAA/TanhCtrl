@@ -38,21 +38,18 @@ struct VehicleState
 };
 
 /**
- * @brief Trajectory reference for the outer-loop and flatness feedforward.
- *
- * The flat outputs are position and yaw. Higher-order derivatives are optional;
- * if unavailable they can be left at zero.
+ * @brief Trajectory reference for the outer-loop.
  */
 struct TrajectoryRef
 {
   Eigen::Vector3d position_ned{Eigen::Vector3d::Zero()};  ///< Desired position in NED [m].
   Eigen::Vector3d velocity_ned{Eigen::Vector3d::Zero()};  ///< Desired velocity in NED [m/s].
   Eigen::Vector3d acceleration_ned{Eigen::Vector3d::Zero()};  ///< Desired acceleration in NED [m/s^2].
-  Eigen::Vector3d jerk_ned{Eigen::Vector3d::Zero()};  ///< Desired jerk in NED [m/s^3].
-  Eigen::Vector3d snap_ned{Eigen::Vector3d::Zero()};  ///< Desired snap in NED [m/s^4].
+  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in body FRD [rad/s].
+  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired body torque feedforward in FRD [N*m].
   double yaw{0.0};  ///< Desired yaw angle [rad].
-  double yaw_rate{0.0};  ///< Desired yaw rate [rad/s].
-  double yaw_acceleration{0.0};  ///< Desired yaw acceleration [rad/s^2].
+  bool has_angular_velocity_feedforward{false};  ///< True when the body-rate feedforward is valid.
+  bool has_torque_feedforward{false};  ///< True when the body-torque feedforward is valid.
   bool valid{false};  ///< True when the reference is valid.
 };
 
@@ -95,15 +92,17 @@ struct AllocationParams
 };
 
 /**
- * @brief Differential-flatness-derived attitude and body-rate references.
+ * @brief Desired attitude reconstructed from the outer-loop thrust vector.
  */
 struct AttitudeReference
 {
   Eigen::Quaterniond attitude_body_to_ned{Eigen::Quaterniond::Identity()};  ///< Desired attitude from body FRD to NED.
   Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in body FRD [rad/s].
-  Eigen::Vector3d angular_acceleration_body{Eigen::Vector3d::Zero()};  ///< Desired angular acceleration in body FRD [rad/s^2].
+  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired body torque feedforward in FRD [N*m].
   Eigen::Vector3d thrust_direction_ned{Eigen::Vector3d::UnitZ()};  ///< Desired body z-axis in NED.
   double collective_thrust{0.0};  ///< Desired collective thrust magnitude [N].
+  bool has_angular_velocity_feedforward{false};  ///< True when body-rate feedforward is valid.
+  bool has_torque_feedforward{false};  ///< True when body-torque feedforward is valid.
   bool valid{false};  ///< True when the reference is valid.
 };
 

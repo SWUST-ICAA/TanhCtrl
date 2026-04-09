@@ -32,6 +32,7 @@ protected:
 TEST_F(TanhCtrlNodeTopicsTest, IgnoresOverridesForFixedPx4Topics)
 {
   const std::vector<rclcpp::Parameter> overrides = {
+    {"topics.reference", "/override/tanh_ctrl/reference"},
     {"topics.sensor_combined", "/override/out/sensor_combined"},
     {"topics.vehicle_odometry", "/override/out/vehicle_odometry"},
     {"topics.vehicle_status_v1", "/override/out/vehicle_status_v1"},
@@ -56,6 +57,7 @@ TEST_F(TanhCtrlNodeTopicsTest, IgnoresOverridesForFixedPx4Topics)
   EXPECT_EQ(controller->sensorCombinedTopic(), "/fmu/out/sensor_combined");
   EXPECT_EQ(controller->vehicleOdometryTopic(), "/fmu/out/vehicle_odometry");
   EXPECT_EQ(controller->vehicleStatusV1Topic(), "/fmu/out/vehicle_status_v1");
+  EXPECT_EQ(controller->referenceTopic(), "/override/tanh_ctrl/reference");
   EXPECT_EQ(controller->actuatorMotorsTopic(), "/fmu/in/actuator_motors");
   EXPECT_EQ(controller->offboardControlModeTopic(), "/fmu/in/offboard_control_mode");
   EXPECT_EQ(controller->vehicleCommandTopic(), "/fmu/in/vehicle_command");
@@ -72,6 +74,7 @@ TEST_F(TanhCtrlNodeTopicsTest, IgnoresOverridesForFixedPx4Topics)
   EXPECT_FALSE(controller->has_parameter("topics.sensor_combined"));
   EXPECT_FALSE(controller->has_parameter("topics.vehicle_odometry"));
   EXPECT_FALSE(controller->has_parameter("topics.vehicle_status_v1"));
+  EXPECT_FALSE(controller->has_parameter("topics.trajectory_setpoint"));
   EXPECT_FALSE(controller->has_parameter("topics.actuator_motors"));
   EXPECT_FALSE(controller->has_parameter("topics.offboard_control_mode"));
   EXPECT_FALSE(controller->has_parameter("topics.vehicle_command"));
@@ -84,7 +87,14 @@ TEST_F(TanhCtrlNodeTopicsTest, IgnoresOverridesForFixedPx4Topics)
   EXPECT_FALSE(controller->has_parameter("allocation.beta"));
   EXPECT_FALSE(controller->has_parameter("motor.force_max"));
   EXPECT_FALSE(controller->has_parameter("motor.output_map"));
+  EXPECT_FALSE(controller->has_parameter("position.M_P"));
+  EXPECT_FALSE(controller->has_parameter("position.K_P"));
+  EXPECT_FALSE(controller->has_parameter("position.M_V"));
+  EXPECT_FALSE(controller->has_parameter("position.K_V"));
+  EXPECT_FALSE(controller->has_parameter("position.K_Acceleration"));
+  EXPECT_FALSE(controller->has_parameter("filters.linear_accel_cutoff_hz"));
   EXPECT_TRUE(controller->has_parameter("model.force_max"));
+  EXPECT_TRUE(controller->has_parameter("topics.reference"));
 }
 
 }  // namespace

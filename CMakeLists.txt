@@ -7,10 +7,20 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/FlatTrajectoryReference.msg"
+  DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
+)
+
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 add_library(tanh_ctrl_core
   src/tanh_ctrl.cpp
@@ -26,8 +36,12 @@ add_library(tanh_ctrl_node_lib
   src/tanh_ctrl_node.cpp
 )
 
-target_link_libraries(tanh_ctrl_node_lib tanh_ctrl_core)
+target_link_libraries(tanh_ctrl_node_lib
+  tanh_ctrl_core
+  "${cpp_typesupport_target}"
+)
 ament_target_dependencies(tanh_ctrl_node_lib
+  geometry_msgs
   rclcpp
   px4_msgs
   std_msgs
@@ -56,6 +70,11 @@ install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/flatness_reference_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
 
@@ -66,6 +85,13 @@ if(BUILD_TESTING)
   ament_target_dependencies(tanh_ctrl_node_topics_test
     rclcpp
   )
+
+  ament_add_gtest(tanh_ctrl_core_feedforward_test
+    test/tanh_ctrl_core_feedforward_test.cpp
+  )
+  target_link_libraries(tanh_ctrl_core_feedforward_test tanh_ctrl_core)
 endif()
+
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

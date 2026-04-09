@@ -68,8 +68,7 @@ tanh_ctrl_node::tanh_ctrl_node(const rclcpp::NodeOptions & options)
 
 void tanh_ctrl_node::declareParameters()
 {
-  this->declare_parameter<std::string>(
-    "topics.trajectory_setpoint", "/tanh_ctrl/trajectory_setpoint");
+  this->declare_parameter<std::string>("topics.reference", "/tanh_ctrl/reference");
   this->declare_parameter<std::string>("topics.start_tracking", "/mission/start_tracking");
 
   this->declare_parameter<double>("control_rate_hz", 100.0);
@@ -85,11 +84,6 @@ void tanh_ctrl_node::declareParameters()
   this->declare_parameter<std::vector<double>>(
     "model.inertia_diag", {0.02384669, 0.02394962, 0.04399995});
 
-  this->declare_parameter<std::vector<double>>("position.M_P", {1.0, 1.0, 1.0});
-  this->declare_parameter<std::vector<double>>("position.K_P", {1.5, 1.5, 1.5});
-  this->declare_parameter<std::vector<double>>("position.M_V", {3.0, 3.0, 3.0});
-  this->declare_parameter<std::vector<double>>("position.K_V", {1.0, 1.0, 1.0});
-  this->declare_parameter<std::vector<double>>("position.K_Acceleration", {0.0, 0.0, 0.0});
   this->declare_parameter<double>("position.horizontal.M_P", 2.5);
   this->declare_parameter<double>("position.vertical.M_P", 2.0);
   this->declare_parameter<double>("position.horizontal.K_P", 1.0);
@@ -119,7 +113,6 @@ void tanh_ctrl_node::declareParameters()
   this->declare_parameter<double>("attitude.tilt.observer.L_AngularVelocity", 5.0);
   this->declare_parameter<double>("attitude.yaw.observer.L_AngularVelocity", 5.0);
 
-  this->declare_parameter<double>("filters.linear_accel_cutoff_hz", 0.0);
   this->declare_parameter<double>(
     "filters.linear.horizontal_cutoff_hz", std::numeric_limits<double>::quiet_NaN());
   this->declare_parameter<double>(
@@ -151,10 +144,10 @@ void tanh_ctrl_node::createRosInterfaces()
     topic_sensor_combined_,
     qos_px4_out,
     std::bind(&tanh_ctrl_node::accelCallback, this, std::placeholders::_1));
-  setpoint_sub_ = this->create_subscription<px4_msgs::msg::TrajectorySetpoint>(
-    topic_trajectory_setpoint_,
+  reference_sub_ = this->create_subscription<msg::FlatTrajectoryReference>(
+    topic_reference_,
     qos_default,
-    std::bind(&tanh_ctrl_node::setpointCallback, this, std::placeholders::_1));
+    std::bind(&tanh_ctrl_node::referenceCallback, this, std::placeholders::_1));
 
   motors_pub_ =
     this->create_publisher<px4_msgs::msg::ActuatorMotors>(topic_actuator_motors_, qos_default);
@@ -190,7 +183,7 @@ void tanh_ctrl_node::loadGeneralParams()
   topic_sensor_combined_ = kSensorCombinedTopic;
   topic_vehicle_odometry_ = kVehicleOdometryTopic;
   topic_vehicle_status_v1_ = kVehicleStatusV1Topic;
-  topic_trajectory_setpoint_ = this->get_parameter("topics.trajectory_setpoint").as_string();
+  topic_reference_ = this->get_parameter("topics.reference").as_string();
   topic_actuator_motors_ = kActuatorMotorsTopic;
   topic_offboard_control_mode_ = kOffboardControlModeTopic;
   topic_vehicle_command_ = kVehicleCommandTopic;
@@ -294,17 +287,12 @@ void tanh_ctrl_node::loadFilterParams()
     this->get_parameter("filters.linear.horizontal_cutoff_hz").as_double();
   const double linear_vertical_cutoff =
     this->get_parameter("filters.linear.vertical_cutoff_hz").as_double();
-  const double legacy_linear_cutoff =
-    this->get_parameter("filters.linear_accel_cutoff_hz").as_double();
-
-  const double horizontal_cutoff =
-    std::isfinite(linear_horizontal_cutoff) ?
+  const double horizontal_cutoff = std::isfinite(linear_horizontal_cutoff) ?
     linear_horizontal_cutoff :
-    (std::isfinite(legacy_linear_cutoff) ? legacy_linear_cutoff : 0.0);
-  const double vertical_cutoff =
-    std::isfinite(linear_vertical_cutoff) ?
+    0.0;
+  const double vertical_cutoff = std::isfinite(linear_vertical_cutoff) ?
     linear_vertical_cutoff :
-    (std::isfinite(legacy_linear_cutoff) ? legacy_linear_cutoff : horizontal_cutoff);
+    horizontal_cutoff;
 
   controller_.setLinearAccelerationLowPassHz(
     Eigen::Vector3d(horizontal_cutoff, horizontal_cutoff, vertical_cutoff));
@@ -490,59 +478,50 @@ void tanh_ctrl_node::accelCallback(const px4_msgs::msg::SensorCombined::SharedPt
   state_.linear_acceleration_ned = accel_ned;
 }
 
-void tanh_ctrl_node::setpointCallback(
-  const px4_msgs::msg::TrajectorySetpoint::SharedPtr msg)
+void tanh_ctrl_node::referenceCallback(
+  const msg::FlatTrajectoryReference::SharedPtr msg)
 {
   if (!msg) {
     return;
   }
 
-  if (!isFiniteVec3(msg->position)) {
+  if (!std::isfinite(msg->position_ned.x) ||
+    !std::isfinite(msg->position_ned.y) ||
+    !std::isfinite(msg->position_ned.z))
+  {
     external_ref_.valid = false;
     has_external_ref_ = false;
     return;
   }
 
   external_ref_.position_ned =
-    Eigen::Vector3d(msg->position[0], msg->position[1], msg->position[2]);
+    Eigen::Vector3d(msg->position_ned.x, msg->position_ned.y, msg->position_ned.z);
   external_ref_.yaw = std::isfinite(msg->yaw) ? static_cast<double>(msg->yaw) : 0.0;
   external_ref_.velocity_ned = Eigen::Vector3d(
-    std::isfinite(msg->velocity[0]) ? static_cast<double>(msg->velocity[0]) : 0.0,
-    std::isfinite(msg->velocity[1]) ? static_cast<double>(msg->velocity[1]) : 0.0,
-    std::isfinite(msg->velocity[2]) ? static_cast<double>(msg->velocity[2]) : 0.0);
+    std::isfinite(msg->velocity_ned.x) ? static_cast<double>(msg->velocity_ned.x) : 0.0,
+    std::isfinite(msg->velocity_ned.y) ? static_cast<double>(msg->velocity_ned.y) : 0.0,
+    std::isfinite(msg->velocity_ned.z) ? static_cast<double>(msg->velocity_ned.z) : 0.0);
   external_ref_.acceleration_ned = Eigen::Vector3d(
-    std::isfinite(msg->acceleration[0]) ? static_cast<double>(msg->acceleration[0]) : 0.0,
-    std::isfinite(msg->acceleration[1]) ? static_cast<double>(msg->acceleration[1]) : 0.0,
-    std::isfinite(msg->acceleration[2]) ? static_cast<double>(msg->acceleration[2]) : 0.0);
-  external_ref_.jerk_ned = Eigen::Vector3d(
-    std::isfinite(msg->jerk[0]) ? static_cast<double>(msg->jerk[0]) : 0.0,
-    std::isfinite(msg->jerk[1]) ? static_cast<double>(msg->jerk[1]) : 0.0,
-    std::isfinite(msg->jerk[2]) ? static_cast<double>(msg->jerk[2]) : 0.0);
-  external_ref_.yaw_rate =
-    std::isfinite(msg->yawspeed) ? static_cast<double>(msg->yawspeed) : 0.0;
-
-  const uint64_t reference_timestamp_us =
-    msg->timestamp != 0 ? msg->timestamp : nowMicros(*this->get_clock());
-  external_ref_.snap_ned.setZero();
-  external_ref_.yaw_acceleration = 0.0;
-
-  if (has_last_reference_derivatives_ && reference_timestamp_us > last_reference_timestamp_us_) {
-    const double derivative_dt = std::clamp(
-      static_cast<double>(reference_timestamp_us - last_reference_timestamp_us_) * 1e-6,
-      1e-4,
-      0.1);
-    external_ref_.snap_ned =
-      (external_ref_.jerk_ned - last_reference_jerk_ned_) / derivative_dt;
-    external_ref_.yaw_acceleration =
-      (external_ref_.yaw_rate - last_reference_yaw_rate_) / derivative_dt;
-  }
-
-  last_reference_timestamp_us_ = reference_timestamp_us;
+    std::isfinite(msg->acceleration_ned.x) ? static_cast<double>(msg->acceleration_ned.x) : 0.0,
+    std::isfinite(msg->acceleration_ned.y) ? static_cast<double>(msg->acceleration_ned.y) : 0.0,
+    std::isfinite(msg->acceleration_ned.z) ? static_cast<double>(msg->acceleration_ned.z) : 0.0);
+  external_ref_.angular_velocity_body = Eigen::Vector3d(
+    std::isfinite(msg->body_rates_frd.x) ? static_cast<double>(msg->body_rates_frd.x) : 0.0,
+    std::isfinite(msg->body_rates_frd.y) ? static_cast<double>(msg->body_rates_frd.y) : 0.0,
+    std::isfinite(msg->body_rates_frd.z) ? static_cast<double>(msg->body_rates_frd.z) : 0.0);
+  external_ref_.has_angular_velocity_feedforward =
+    std::isfinite(msg->body_rates_frd.x) &&
+    std::isfinite(msg->body_rates_frd.y) &&
+    std::isfinite(msg->body_rates_frd.z);
+  external_ref_.torque_body = Eigen::Vector3d(
+    std::isfinite(msg->body_torque_frd.x) ? static_cast<double>(msg->body_torque_frd.x) : 0.0,
+    std::isfinite(msg->body_torque_frd.y) ? static_cast<double>(msg->body_torque_frd.y) : 0.0,
+    std::isfinite(msg->body_torque_frd.z) ? static_cast<double>(msg->body_torque_frd.z) : 0.0);
+  external_ref_.has_torque_feedforward =
+    std::isfinite(msg->body_torque_frd.x) &&
+    std::isfinite(msg->body_torque_frd.y) &&
+    std::isfinite(msg->body_torque_frd.z);
   last_reference_receive_us_ = nowMicros(*this->get_clock());
-  last_reference_jerk_ned_ = external_ref_.jerk_ned;
-  last_reference_yaw_rate_ = external_ref_.yaw_rate;
-  has_last_reference_derivatives_ = true;
-
   external_ref_.valid = true;
   has_external_ref_ = true;
 }
@@ -589,11 +568,11 @@ void tanh_ctrl_node::updateHoldReference(double target_z_ned)
     Eigen::Vector3d(state_.position_ned.x(), state_.position_ned.y(), target_z_ned);
   hold_ref_.velocity_ned.setZero();
   hold_ref_.acceleration_ned.setZero();
-  hold_ref_.jerk_ned.setZero();
-  hold_ref_.snap_ned.setZero();
+  hold_ref_.angular_velocity_body.setZero();
+  hold_ref_.torque_body.setZero();
   hold_ref_.yaw = current_yaw_;
-  hold_ref_.yaw_rate = 0.0;
-  hold_ref_.yaw_acceleration = 0.0;
+  hold_ref_.has_angular_velocity_feedforward = false;
+  hold_ref_.has_torque_feedforward = false;
   hold_ref_.valid = true;
   has_hold_ref_ = true;
 }

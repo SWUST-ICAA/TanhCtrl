@@ -8,12 +8,12 @@
 #include <px4_msgs/msg/actuator_motors.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/sensor_combined.hpp>
-#include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
 
+#include "tanh_ctrl/msg/flat_trajectory_reference.hpp"
 #include "tanh_ctrl/tanh_ctrl.hpp"
 
 namespace tanh_ctrl {
@@ -73,6 +73,7 @@ public:
   const std::string & sensorCombinedTopic() const { return topic_sensor_combined_; }
   const std::string & vehicleOdometryTopic() const { return topic_vehicle_odometry_; }
   const std::string & vehicleStatusV1Topic() const { return topic_vehicle_status_v1_; }
+  const std::string & referenceTopic() const { return topic_reference_; }
   const std::string & actuatorMotorsTopic() const { return topic_actuator_motors_; }
   const std::string & offboardControlModeTopic() const { return topic_offboard_control_mode_; }
   const std::string & vehicleCommandTopic() const { return topic_vehicle_command_; }
@@ -122,11 +123,11 @@ private:
   void vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
 
   /**
-   * @brief Handle trajectory reference updates.
+   * @brief Handle custom trajectory reference updates.
    *
-   * @param msg PX4 trajectory setpoint message.
+   * @param msg Flatness-based streamed reference message.
    */
-  void setpointCallback(const px4_msgs::msg::TrajectorySetpoint::SharedPtr msg);
+  void referenceCallback(const msg::FlatTrajectoryReference::SharedPtr msg);
 
   /**
    * @brief Run the periodic control loop.
@@ -290,7 +291,7 @@ private:
   rclcpp::Subscription<px4_msgs::msg::SensorCombined>::SharedPtr accel_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_sub_;
-  rclcpp::Subscription<px4_msgs::msg::TrajectorySetpoint>::SharedPtr setpoint_sub_;
+  rclcpp::Subscription<msg::FlatTrajectoryReference>::SharedPtr reference_sub_;
 
   rclcpp::Publisher<px4_msgs::msg::ActuatorMotors>::SharedPtr motors_pub_;
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_mode_pub_;
@@ -310,11 +311,7 @@ private:
   uint64_t last_odom_us_{0};
   double last_odom_dt_{0.01};
   uint64_t last_control_us_{0};
-  uint64_t last_reference_timestamp_us_{0};
   uint64_t last_reference_receive_us_{0};
-  Eigen::Vector3d last_reference_jerk_ned_{Eigen::Vector3d::Zero()};
-  double last_reference_yaw_rate_{0.0};
-  bool has_last_reference_derivatives_{false};
   bool is_armed_{false};
   bool is_offboard_{false};
   bool offboard_ever_engaged_{false};
@@ -334,7 +331,7 @@ private:
   // Topics and behavior parameters
   std::string topic_sensor_combined_;
   std::string topic_vehicle_odometry_;
-  std::string topic_trajectory_setpoint_;
+  std::string topic_reference_;
   std::string topic_actuator_motors_;
   std::string topic_offboard_control_mode_;
   std::string topic_vehicle_command_;

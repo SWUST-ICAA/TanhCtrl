@@ -1,0 +1,22 @@
+flatness_reference_publisher:
+  ros__parameters:
+    topics:
+      reference: /tanh_ctrl/reference
+      start_tracking: /mission/start_tracking
+
+    vehicle:
+      gravity: 9.81
+      inertia_diag: [0.02384669, 0.02394962, 0.04399995]
+
+    planner:
+      publish_rate_hz: 100.0
+      trajectory_type: circle
+      radius: 1.5
+      speed: 1.0
+      period_s: 8.0
+      figure8_x_amplitude_m: 1.5
+      figure8_y_amplitude_m: 0.75
+      height_offset_ned: 0.0
+      tilt_angle_deg: 15.0
+      yaw_mode: track_velocity
+      speed_ramp_time_s: 2.0

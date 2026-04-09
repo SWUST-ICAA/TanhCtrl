@@ -84,11 +84,9 @@ Eigen::Quaterniond computeDesiredAttitude(
   return desired_attitude;
 }
 
-AttitudeReference computeFlatnessReference(
-  const VehicleState & state,
+AttitudeReference computeAttitudeReference(
   const Eigen::Vector3d & desired_thrust_vector_ned,
-  const TrajectoryRef & ref,
-  double mass)
+  const TrajectoryRef & ref)
 {
   AttitudeReference attitude_reference;
 
@@ -104,46 +102,19 @@ AttitudeReference computeFlatnessReference(
   attitude_reference.thrust_direction_ned = thrust_vector_ned / collective_thrust;
   attitude_reference.attitude_body_to_ned =
     computeDesiredAttitude(attitude_reference.thrust_direction_ned, sanitizeScalar(ref.yaw));
+  attitude_reference.angular_velocity_body =
+    ref.has_angular_velocity_feedforward && ref.angular_velocity_body.allFinite() ?
+    ref.angular_velocity_body :
+    Eigen::Vector3d::Zero();
+  attitude_reference.has_angular_velocity_feedforward =
+    ref.has_angular_velocity_feedforward && attitude_reference.angular_velocity_body.allFinite();
+  attitude_reference.torque_body =
+    ref.has_torque_feedforward && ref.torque_body.allFinite() ?
+    ref.torque_body :
+    Eigen::Vector3d::Zero();
+  attitude_reference.has_torque_feedforward =
+    ref.has_torque_feedforward && attitude_reference.torque_body.allFinite();
   attitude_reference.valid = true;
-
-  const Eigen::Quaterniond q_body_to_ned = state.q_body_to_ned.normalized();
-  const Eigen::Vector3d x_body_ned = q_body_to_ned * Eigen::Vector3d::UnitX();
-  const Eigen::Vector3d y_body_ned = q_body_to_ned * Eigen::Vector3d::UnitY();
-  const Eigen::Vector3d z_body_ned = q_body_to_ned * Eigen::Vector3d::UnitZ();
-  const Eigen::Vector3d world_z_ned = Eigen::Vector3d::UnitZ();
-
-  const Eigen::Vector3d jerk_ned = sanitizeVector(ref.jerk_ned);
-  const Eigen::Vector3d snap_ned = sanitizeVector(ref.snap_ned);
-  const Eigen::Vector3d angular_velocity_body = sanitizeVector(state.angular_velocity_body);
-  const Eigen::Vector3d angular_velocity_ned = q_body_to_ned * angular_velocity_body;
-
-  const double thrust_rate = mass * jerk_ned.dot(z_body_ned);
-  const Eigen::Vector3d h_omega =
-    (mass / collective_thrust) * (jerk_ned - thrust_rate * z_body_ned);
-  attitude_reference.angular_velocity_body = Eigen::Vector3d(
-    -h_omega.dot(y_body_ned),
-    h_omega.dot(x_body_ned),
-    sanitizeScalar(ref.yaw_rate) * world_z_ned.dot(z_body_ned));
-
-  const Eigen::Vector3d omega_cross_z_body = angular_velocity_ned.cross(z_body_ned);
-  const double thrust_acceleration =
-    mass * snap_ned.dot(z_body_ned) + mass * omega_cross_z_body.dot(jerk_ned);
-  const Eigen::Vector3d h_alpha =
-    (mass / collective_thrust) * snap_ned -
-    angular_velocity_ned.cross(angular_velocity_ned.cross(z_body_ned)) +
-    ((2.0 * thrust_rate) / collective_thrust) * omega_cross_z_body +
-    z_body_ned * (thrust_acceleration / collective_thrust);
-  attitude_reference.angular_acceleration_body = Eigen::Vector3d(
-    -h_alpha.dot(y_body_ned),
-    h_alpha.dot(x_body_ned),
-    sanitizeScalar(ref.yaw_acceleration) * world_z_ned.dot(z_body_ned));
-
-  if (!attitude_reference.angular_velocity_body.allFinite()) {
-    attitude_reference.angular_velocity_body.setZero();
-  }
-  if (!attitude_reference.angular_acceleration_body.allFinite()) {
-    attitude_reference.angular_acceleration_body.setZero();
-  }
 
   return attitude_reference;
 }
@@ -372,7 +343,7 @@ bool tanh_ctrl::compute(
   computePosition(state, ref, dt, &thrust_vec_ned, &thrust_norm);
 
   const AttitudeReference attitude_reference =
-    computeFlatnessReference(state, thrust_vec_ned, ref, mass_);
+    computeAttitudeReference(thrust_vec_ned, ref);
 
   Eigen::Vector3d torque_body = Eigen::Vector3d::Zero();
   computeAttitude(state, attitude_reference, dt, &torque_body);
@@ -453,13 +424,10 @@ void tanh_ctrl::computeAttitude(
   const Eigen::Quaterniond q = state.q_body_to_ned.normalized();
   const Eigen::Quaterniond q_d = attitude_reference.attitude_body_to_ned.normalized();
   const Eigen::Vector3d desired_angular_velocity_body =
-    attitude_reference.angular_velocity_body.allFinite() ?
+    attitude_reference.has_angular_velocity_feedforward ?
     attitude_reference.angular_velocity_body :
     Eigen::Vector3d::Zero();
-  const Eigen::Vector3d desired_angular_acceleration_body =
-    attitude_reference.angular_acceleration_body.allFinite() ?
-    attitude_reference.angular_acceleration_body :
-    Eigen::Vector3d::Zero();
+  const Eigen::Vector3d desired_angular_acceleration_body = Eigen::Vector3d::Zero();
 
   Eigen::Vector3d angular_acceleration_body = Eigen::Vector3d::Zero();
   if (has_last_angular_velocity_) {
@@ -511,11 +479,17 @@ void tanh_ctrl::computeAttitude(
     angular_acceleration_body - desired_angular_acceleration_body;
 
   const Eigen::Vector3d desired_torque_control =
+    (attitude_reference.has_torque_feedforward ?
+    attitude_reference.torque_body :
+    Eigen::Vector3d::Zero()) +
     omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance_filtered -
     inertia_ * angular_velocity_control_term -
     inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(
       angular_acceleration_error_body);
   const Eigen::Vector3d desired_torque_observer =
+    (attitude_reference.has_torque_feedforward ?
+    attitude_reference.torque_body :
+    Eigen::Vector3d::Zero()) +
     omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance_raw -
     inertia_ * angular_velocity_control_term -
     inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(
