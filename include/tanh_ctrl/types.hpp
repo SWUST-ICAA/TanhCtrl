@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
 #include <cmath>
 
 namespace tanh_ctrl {
@@ -20,6 +21,34 @@ inline Eigen::Vector3d planarAxisVec(double planar, double axial)
   const double planar_value = std::isfinite(planar) ? planar : 0.0;
   const double axial_value = std::isfinite(axial) ? axial : planar_value;
   return Eigen::Vector3d(planar_value, planar_value, axial_value);
+}
+
+/**
+ * @brief Invert a PX4 THR_MDL_FAC-style normalized thrust model.
+ *
+ * PX4 models normalized thrust as:
+ * `rel_thrust = factor * rel_signal^2 + (1 - factor) * rel_signal`
+ *
+ * This helper computes `rel_signal` from `rel_thrust`.
+ *
+ * @param relative_thrust Normalized thrust in [0, 1].
+ * @param thrust_model_factor PX4-style thrust model factor in [0, 1].
+ * @return Normalized throttle / actuator signal in [0, 1].
+ */
+inline double throttleFromRelativeThrust(double relative_thrust, double thrust_model_factor)
+{
+  const double rel_thrust = std::clamp(relative_thrust, 0.0, 1.0);
+  const double factor = std::clamp(thrust_model_factor, 0.0, 1.0);
+
+  if (factor <= 1e-9) {
+    return rel_thrust;
+  }
+
+  const double a = factor;
+  const double b = 1.0 - factor;
+  const double tmp1 = b / (2.0 * a);
+  const double tmp2 = (b * b) / (4.0 * a * a);
+  return std::clamp(-tmp1 + std::sqrt(tmp2 + rel_thrust / a), 0.0, 1.0);
 }
 
 /**

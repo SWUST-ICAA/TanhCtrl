@@ -87,6 +87,7 @@ public:
   bool autoArmEnabled() const { return enable_auto_arm_; }
   int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
   double motorForceMax() const { return motor_force_max_; }
+  double thrustModelFactor() const { return thrust_model_factor_; }
   std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
   double allocationBeta() const { return controller_.getAllocationParams().beta; }
 
@@ -343,6 +344,7 @@ private:
   bool publish_offboard_control_mode_{true};
   bool publish_vehicle_thrust_setpoint_{true};
   double motor_force_max_{8.54858};
+  double thrust_model_factor_{1.0};
   double gravity_ned_{9.81};
 
   // Output permutation: out[i] = internal[motor_output_map_[i]]

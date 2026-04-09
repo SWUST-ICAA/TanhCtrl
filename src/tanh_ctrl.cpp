@@ -147,12 +147,13 @@ Eigen::Vector4d allocateMotorForces(
 }
 
 Eigen::Vector4d forcesToMotorControls(
-  const Eigen::Vector4d & forces, double motor_force_max)
+  const Eigen::Vector4d & forces, double motor_force_max, double thrust_model_factor)
 {
   const double safe_motor_force_max = std::max(kMinCollectiveThrust, motor_force_max);
   Eigen::Vector4d controls = Eigen::Vector4d::Zero();
   for (int index = 0; index < 4; ++index) {
-    controls(index) = std::clamp(forces(index) / safe_motor_force_max, 0.0, 1.0);
+    const double relative_thrust = std::clamp(forces(index) / safe_motor_force_max, 0.0, 1.0);
+    controls(index) = throttleFromRelativeThrust(relative_thrust, thrust_model_factor);
   }
   return controls;
 }
@@ -194,6 +195,11 @@ void tanh_ctrl::setAllocationParams(const AllocationParams & alloc)
 void tanh_ctrl::setMotorForceMax(double max_force)
 {
   motor_force_max_ = clampPositive(max_force, kMinMass);
+}
+
+void tanh_ctrl::setThrustModelFactor(double thrust_model_factor)
+{
+  thrust_model_factor_ = std::clamp(thrust_model_factor, 0.0, 1.0);
 }
 
 void tanh_ctrl::setMaxTilt(double max_tilt_rad)
@@ -351,7 +357,8 @@ bool tanh_ctrl::compute(
   out->thrust_total = thrust_norm;
   out->torque_body = torque_body;
   out->motor_forces = allocateMotorForces(alloc_, thrust_norm, torque_body);
-  out->motor_controls = forcesToMotorControls(out->motor_forces, motor_force_max_);
+  out->motor_controls = forcesToMotorControls(
+    out->motor_forces, motor_force_max_, thrust_model_factor_);
   return true;
 }
 

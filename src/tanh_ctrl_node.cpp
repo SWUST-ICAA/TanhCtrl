@@ -81,6 +81,7 @@ void tanh_ctrl_node::declareParameters()
   this->declare_parameter<double>("model.mass", 2.0643076923076915);
   this->declare_parameter<double>("model.gravity", 9.81);
   this->declare_parameter<double>("model.force_max", 8.54858);
+  this->declare_parameter<double>("model.thrust_model_factor", 1.0);
   this->declare_parameter<std::vector<double>>(
     "model.inertia_diag", {0.02384669, 0.02394962, 0.04399995});
 
@@ -314,6 +315,8 @@ void tanh_ctrl_node::loadAllocationParams()
 
   motor_force_max_ = this->get_parameter("model.force_max").as_double();
   controller_.setMotorForceMax(motor_force_max_);
+  thrust_model_factor_ = this->get_parameter("model.thrust_model_factor").as_double();
+  controller_.setThrustModelFactor(thrust_model_factor_);
 }
 
 void tanh_ctrl_node::loadMotorOutputMap()
@@ -784,7 +787,8 @@ void tanh_ctrl_node::publishThrustSetpoint(const ControlOutput & out, uint64_t n
   double throttle = 0.0;
   const double denominator = 4.0 * std::max(1e-6, motor_force_max_);
   if (std::isfinite(out.thrust_total)) {
-    throttle = std::clamp(out.thrust_total / denominator, 0.0, 1.0);
+    const double relative_thrust = std::clamp(out.thrust_total / denominator, 0.0, 1.0);
+    throttle = throttleFromRelativeThrust(relative_thrust, thrust_model_factor_);
   }
 
   thrust_sp.xyz = {0.0f, 0.0f, static_cast<float>(-throttle)};

@@ -69,6 +69,13 @@ public:
    */
   void setMotorForceMax(double max_force);
 
+  /**
+   * @brief Set PX4 THR_MDL_FAC-style thrust model factor.
+   *
+   * @param thrust_model_factor Model factor in [0, 1]. Zero keeps a linear mapping.
+   */
+  void setThrustModelFactor(double thrust_model_factor);
+
   const AllocationParams & getAllocationParams() const { return alloc_; }
 
   /**
@@ -201,6 +208,7 @@ private:
   AttitudeGains att_gains_{};
   AllocationParams alloc_{};
   double motor_force_max_{10.0};
+  double thrust_model_factor_{1.0};
   double max_tilt_rad_{0.0};
 
   Eigen::Vector3d velocity_error_hat_ned_{Eigen::Vector3d::Zero()};  ///< Velocity observer state in NED.

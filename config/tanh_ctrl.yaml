@@ -10,6 +10,7 @@ tanh_ctrl:
       mass: 2.0643076923076915
       gravity: 9.81
       force_max: 8.54858
+      thrust_model_factor: 1.0
       inertia_diag: [0.02384669, 0.02394962, 0.04399995]
 
     allocation:
@@ -17,12 +18,11 @@ tanh_ctrl:
       cq_ct: 0.016
 
     mission:
-      # 解锁后先起飞到该高度；到达并稳定后才向轨迹源发送开始信号
       takeoff_target_z: -2.0
       takeoff_z_threshold: 0.2
       takeoff_hold_time_s: 2.0
-      reference_timeout_s: 0.3  # 轨迹断流超时后切回原地悬停
-      request_interval_s: 1.0   # offboard / auto_arm 请求重发周期
+      reference_timeout_s: 0.3  
+      request_interval_s: 1.0   
 
     position:
       horizontal:
