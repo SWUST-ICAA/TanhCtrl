@@ -447,6 +447,20 @@ class FlatnessReferencePublisher(Node):
         u = elapsed / ramp
         return ramp * (u ** 3 - 0.5 * u ** 4)
 
+    def reparameterized_kinematics(self, elapsed_s: float) -> Tuple[float, float, float]:
+        elapsed = max(float(elapsed_s), 0.0)
+        ramp = float(self.speed_ramp_time_s)
+        if ramp <= 0.0:
+            return elapsed, 1.0, 0.0
+        if elapsed >= ramp:
+            return elapsed - 0.5 * ramp, 1.0, 0.0
+
+        u = elapsed / ramp
+        path_time = ramp * (u ** 3 - 0.5 * u ** 4)
+        path_time_dot = 3.0 * u ** 2 - 2.0 * u ** 3
+        path_time_ddot = (6.0 * u - 6.0 * u ** 2) / ramp
+        return path_time, path_time_dot, path_time_ddot
+
     def sample_path(self, path_time_s: float) -> TrajectorySample:
         if self.active_center_ned is None:
             raise RuntimeError("Publisher enabled before anchor initialization")
@@ -492,16 +506,19 @@ class FlatnessReferencePublisher(Node):
             return self.locked_yaw_rad
         return yaw_from_velocity_ned(velocity_ned, fallback_yaw)
 
+    def sample_reference_state(self, elapsed_s: float) -> TrajectorySample:
+        # Apply the chain rule so speed_ramp_time_s affects both feedforward velocity and acceleration.
+        path_time, path_time_dot, path_time_ddot = self.reparameterized_kinematics(elapsed_s)
+        position, path_velocity, path_acceleration = self.sample_path(path_time)
+        velocity = path_velocity * path_time_dot
+        acceleration = path_acceleration * (path_time_dot ** 2) + path_velocity * path_time_ddot
+        return position, velocity, acceleration
+
     def sample_flat_reference(self, elapsed_s: float) -> dict:
         dt = self.derivative_dt
-        path_time = self.reparameterized_time(elapsed_s)
-        path_time_p1 = self.reparameterized_time(elapsed_s + dt)
-        path_time_p2 = self.reparameterized_time(elapsed_s + 2.0 * dt)
-
-        position, velocity, acceleration = self.sample_path(path_time)
-        _, velocity_p1, acceleration_p1 = self.sample_path(path_time_p1)
-        _, _, acceleration_p2 = self.sample_path(path_time_p2)
-        _, velocity_p2, _ = self.sample_path(path_time_p2)
+        position, velocity, acceleration = self.sample_reference_state(elapsed_s)
+        _, velocity_p1, acceleration_p1 = self.sample_reference_state(elapsed_s + dt)
+        _, velocity_p2, acceleration_p2 = self.sample_reference_state(elapsed_s + 2.0 * dt)
 
         fallback_yaw = self.locked_yaw_rad if self.yaw_mode == "fixed" else 0.0
         yaw = self.yaw_reference(velocity, fallback_yaw)
