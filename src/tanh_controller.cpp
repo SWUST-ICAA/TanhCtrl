@@ -75,45 +75,41 @@ void TanhController::setMaxTilt(double max_tilt_rad)
 
 void TanhController::setLinearAccelerationLowPassHz(const Eigen::Vector3d & cutoff_hz)
 {
-  linear_accel_lpf_cutoff_hz_ = sanitizeCutoff(cutoff_hz);
-  linear_accel_lpf_initialized_ = {{false, false, false}};
+  linear_accel_lpf_.cutoff_hz = sanitizeCutoff(cutoff_hz);
+  reset_low_pass(linear_accel_lpf_);
 }
 
 void TanhController::setAngularAccelerationLowPassHz(double cutoff_hz)
 {
-  angular_accel_lpf_cutoff_hz_ = sanitizeCutoff(cutoff_hz);
-  angular_accel_lpf_initialized_ = false;
+  angular_accel_estimator_.filter.cutoff_hz =
+    Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  reset_rate_estimator(angular_accel_estimator_);
 }
 
 void TanhController::setVelocityDisturbanceLowPassHz(double cutoff_hz)
 {
-  velocity_disturbance_lpf_cutoff_hz_ = sanitizeCutoff(cutoff_hz);
-  velocity_disturbance_lpf_initialized_ = false;
+  velocity_disturbance_lpf_.cutoff_hz =
+    Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  reset_low_pass(velocity_disturbance_lpf_);
 }
 
 void TanhController::setAngularVelocityDisturbanceLowPassHz(double cutoff_hz)
 {
-  angular_velocity_disturbance_lpf_cutoff_hz_ = sanitizeCutoff(cutoff_hz);
-  angular_velocity_disturbance_lpf_initialized_ = false;
+  angular_velocity_disturbance_lpf_.cutoff_hz =
+    Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  reset_low_pass(angular_velocity_disturbance_lpf_);
 }
 
 void TanhController::reset()
 {
   velocity_error_hat_ned_.setZero();
   angular_velocity_error_hat_body_.setZero();
-  last_angular_velocity_body_.setZero();
-  has_last_angular_velocity_ = false;
   first_run_ = true;
 
-  linear_accel_lpf_state_ned_.setZero();
-  angular_accel_lpf_state_body_.setZero();
-  linear_accel_lpf_initialized_ = {{false, false, false}};
-  angular_accel_lpf_initialized_ = false;
-
-  velocity_disturbance_lpf_state_ned_.setZero();
-  angular_velocity_disturbance_lpf_state_body_.setZero();
-  velocity_disturbance_lpf_initialized_ = false;
-  angular_velocity_disturbance_lpf_initialized_ = false;
+  reset_low_pass(linear_accel_lpf_);
+  reset_rate_estimator(angular_accel_estimator_);
+  reset_low_pass(velocity_disturbance_lpf_);
+  reset_low_pass(angular_velocity_disturbance_lpf_);
 }
 
 double TanhController::sanitizeCutoff(double cutoff_hz)
@@ -127,65 +123,6 @@ Eigen::Vector3d TanhController::sanitizeCutoff(const Eigen::Vector3d & cutoff_hz
     sanitizeCutoff(cutoff_hz.x()), sanitizeCutoff(cutoff_hz.y()), sanitizeCutoff(cutoff_hz.z()));
 }
 
-Eigen::Vector3d TanhController::tanhVec(const Eigen::Vector3d & x)
-{
-  return x.array().tanh().matrix();
-}
-
-double TanhController::lowPassScalar(
-  double x, double cutoff_hz, double dt, double * state, bool * initialized)
-{
-  if (!state || !initialized) {
-    return x;
-  }
-
-  if (!(cutoff_hz > 0.0) || !std::isfinite(cutoff_hz) || !(dt > 0.0) || !std::isfinite(dt)) {
-    return x;
-  }
-
-  const double tau = 1.0 / (2.0 * M_PI * cutoff_hz);
-  const double alpha = dt / (tau + dt);
-
-  if (!(*initialized)) {
-    *state = x;
-    *initialized = true;
-    return x;
-  }
-
-  *state += alpha * (x - *state);
-  return *state;
-}
-
-Eigen::Vector3d TanhController::lowPassVec3(
-  const Eigen::Vector3d & x, double cutoff_hz, double dt,
-  Eigen::Vector3d * state, bool * initialized)
-{
-  if (!state || !initialized) {
-    return x;
-  }
-
-  Eigen::Vector3d result;
-  result.x() = lowPassScalar(x.x(), cutoff_hz, dt, &state->x(), initialized);
-  result.y() = lowPassScalar(x.y(), cutoff_hz, dt, &state->y(), initialized);
-  result.z() = lowPassScalar(x.z(), cutoff_hz, dt, &state->z(), initialized);
-  return result;
-}
-
-Eigen::Vector3d TanhController::lowPassVec3(
-  const Eigen::Vector3d & x, const Eigen::Vector3d & cutoff_hz, double dt,
-  Eigen::Vector3d * state, std::array<bool, 3> * initialized)
-{
-  if (!state || !initialized) {
-    return x;
-  }
-
-  Eigen::Vector3d result;
-  result.x() = lowPassScalar(x.x(), cutoff_hz.x(), dt, &state->x(), &(*initialized)[0]);
-  result.y() = lowPassScalar(x.y(), cutoff_hz.y(), dt, &state->y(), &(*initialized)[1]);
-  result.z() = lowPassScalar(x.z(), cutoff_hz.z(), dt, &state->z(), &(*initialized)[2]);
-  return result;
-}
-
 bool TanhController::compute(
   const VehicleState & state, const TrajectoryRef & ref, double dt, ControlOutput * out)
 {
@@ -196,8 +133,8 @@ bool TanhController::compute(
   if (first_run_) {
     velocity_error_hat_ned_.setZero();
     angular_velocity_error_hat_body_.setZero();
-    last_angular_velocity_body_ = state.angular_velocity_body;
-    has_last_angular_velocity_ = true;
+    angular_accel_estimator_.last_value = state.angular_velocity_body;
+    angular_accel_estimator_.has_last_value = true;
     first_run_ = false;
   }
 
@@ -230,26 +167,23 @@ void TanhController::computePosition(
   if (!linear_acceleration_ned.allFinite()) {
     linear_acceleration_ned.setZero();
   }
-  linear_acceleration_ned =
-    lowPassVec3(linear_acceleration_ned, linear_accel_lpf_cutoff_hz_, dt,
-      &linear_accel_lpf_state_ned_, &linear_accel_lpf_initialized_);
+  linear_acceleration_ned = update_low_pass(linear_acceleration_ned, dt, linear_accel_lpf_);
 
   const Eigen::Vector3d tanh_position_error =
-    tanhVec(pos_gains_.K_P.cwiseProduct(position_error_ned));
+    tanh_feedback(position_error_ned, pos_gains_.K_P, Eigen::Vector3d::Ones());
   const Eigen::Vector3d velocity_error_ned =
     (state.velocity_ned - ref.velocity_ned) + pos_gains_.M_P.cwiseProduct(tanh_position_error);
 
   const Eigen::Vector3d velocity_estimation_error_ned =
     velocity_error_ned - velocity_error_hat_ned_;
-  const Eigen::Vector3d velocity_disturbance_raw = pos_gains_.P_V.cwiseProduct(
-    tanhVec(pos_gains_.L_V.cwiseProduct(velocity_estimation_error_ned)));
+  const Eigen::Vector3d velocity_disturbance_raw =
+    tanh_feedback(velocity_estimation_error_ned, pos_gains_.L_V, pos_gains_.P_V);
   const Eigen::Vector3d velocity_disturbance_filtered =
-    lowPassVec3(velocity_disturbance_raw, velocity_disturbance_lpf_cutoff_hz_, dt,
-      &velocity_disturbance_lpf_state_ned_, &velocity_disturbance_lpf_initialized_);
+    update_low_pass(velocity_disturbance_raw, dt, velocity_disturbance_lpf_);
 
   const Eigen::Vector3d gravity_ned(0.0, 0.0, gravity_);
   const Eigen::Vector3d tanh_velocity_error =
-    tanhVec(pos_gains_.K_V.cwiseProduct(velocity_error_ned));
+    tanh_feedback(velocity_error_ned, pos_gains_.K_V, Eigen::Vector3d::Ones());
   const Eigen::Vector3d velocity_feedback = pos_gains_.M_V.cwiseProduct(tanh_velocity_error);
   const Eigen::Vector3d acceleration_feedback =
     pos_gains_.K_Acceleration.cwiseProduct(linear_acceleration_ned);
@@ -297,16 +231,11 @@ void TanhController::computeAttitude(
       : Eigen::Vector3d::Zero();
   const Eigen::Vector3d desired_angular_acceleration_body = Eigen::Vector3d::Zero();
 
-  Eigen::Vector3d angular_acceleration_body = Eigen::Vector3d::Zero();
-  if (has_last_angular_velocity_) {
-    angular_acceleration_body = (state.angular_velocity_body - last_angular_velocity_body_) / dt;
-  }
+  Eigen::Vector3d angular_acceleration_body =
+    update_rate_estimator(state.angular_velocity_body, dt, angular_accel_estimator_);
   if (!angular_acceleration_body.allFinite()) {
     angular_acceleration_body.setZero();
   }
-  angular_acceleration_body =
-    lowPassVec3(angular_acceleration_body, angular_accel_lpf_cutoff_hz_, dt,
-      &angular_accel_lpf_state_body_, &angular_accel_lpf_initialized_);
 
   Eigen::Quaterniond q_error = q_d.conjugate() * q;
   if (q_error.w() < 0.0) {
@@ -315,25 +244,27 @@ void TanhController::computeAttitude(
 
   const Eigen::Vector3d attitude_error = q_error.vec();
   const Eigen::Vector3d tanh_attitude_error =
-    tanhVec(att_gains_.K_Angle.cwiseProduct(attitude_error));
+    tanh_feedback(attitude_error, att_gains_.K_Angle, Eigen::Vector3d::Ones());
   const Eigen::Vector3d angular_velocity_error_body =
     (state.angular_velocity_body - desired_angular_velocity_body) +
     att_gains_.M_Angle.cwiseProduct(tanh_attitude_error);
 
   const Eigen::Vector3d angular_velocity_estimation_error_body =
     angular_velocity_error_body - angular_velocity_error_hat_body_;
-  const Eigen::Vector3d angular_velocity_disturbance_raw = att_gains_.P_AngularVelocity.cwiseProduct(
-    tanhVec(att_gains_.L_AngularVelocity.cwiseProduct(angular_velocity_estimation_error_body)));
-  const Eigen::Vector3d angular_velocity_disturbance_filtered = lowPassVec3(
-    angular_velocity_disturbance_raw, angular_velocity_disturbance_lpf_cutoff_hz_, dt,
-    &angular_velocity_disturbance_lpf_state_body_, &angular_velocity_disturbance_lpf_initialized_);
+  const Eigen::Vector3d angular_velocity_disturbance_raw = tanh_feedback(
+    angular_velocity_estimation_error_body,
+    att_gains_.L_AngularVelocity,
+    att_gains_.P_AngularVelocity);
+  const Eigen::Vector3d angular_velocity_disturbance_filtered =
+    update_low_pass(angular_velocity_disturbance_raw, dt, angular_velocity_disturbance_lpf_);
 
   const Eigen::Vector3d omega_body = state.angular_velocity_body;
   const Eigen::Vector3d omega_cross_inertia_omega = omega_body.cross(inertia_ * omega_body);
   const Eigen::Matrix3d inertia_inv = inertia_.inverse();
 
   const Eigen::Vector3d tanh_angular_velocity_error =
-    tanhVec(att_gains_.K_AngularVelocity.cwiseProduct(angular_velocity_error_body));
+    tanh_feedback(
+      angular_velocity_error_body, att_gains_.K_AngularVelocity, Eigen::Vector3d::Ones());
   const Eigen::Vector3d angular_velocity_control_term =
     att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
   const Eigen::Vector3d angular_acceleration_error_body =
@@ -360,8 +291,6 @@ void TanhController::computeAttitude(
     (-inertia_inv * omega_cross_inertia_omega) + inertia_inv * desired_torque_observer +
     angular_velocity_disturbance_raw;
   angular_velocity_error_hat_body_ += dt * angular_velocity_error_hat_dot_body;
-  last_angular_velocity_body_ = state.angular_velocity_body;
-  has_last_angular_velocity_ = true;
 
   if (torque_body) {
     *torque_body = desired_torque_control;

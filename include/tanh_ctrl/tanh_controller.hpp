@@ -2,9 +2,8 @@
 
 #include <Eigen/Dense>
 
-#include <array>
-
 #include "tanh_ctrl/common.hpp"
+#include "tanh_ctrl/tanh_blocks.hpp"
 
 namespace tanh_ctrl {
 
@@ -41,15 +40,6 @@ public:
 private:
   static double sanitizeCutoff(double cutoff_hz);
   static Eigen::Vector3d sanitizeCutoff(const Eigen::Vector3d & cutoff_hz);
-  static Eigen::Vector3d tanhVec(const Eigen::Vector3d & x);
-  static Eigen::Vector3d lowPassVec3(
-    const Eigen::Vector3d & x, double cutoff_hz, double dt,
-    Eigen::Vector3d * state, bool * initialized);
-  static Eigen::Vector3d lowPassVec3(
-    const Eigen::Vector3d & x, const Eigen::Vector3d & cutoff_hz, double dt,
-    Eigen::Vector3d * state, std::array<bool, 3> * initialized);
-  static double lowPassScalar(
-    double x, double cutoff_hz, double dt, double * state, bool * initialized);
 
   void computePosition(
     const VehicleState & state, const TrajectoryRef & ref, double dt,
@@ -70,25 +60,12 @@ private:
 
   Eigen::Vector3d velocity_error_hat_ned_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d angular_velocity_error_hat_body_{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d last_angular_velocity_body_{Eigen::Vector3d::Zero()};
-  bool has_last_angular_velocity_{false};
   bool first_run_{true};
 
-  Eigen::Vector3d linear_accel_lpf_cutoff_hz_{Eigen::Vector3d::Zero()};
-  Eigen::Vector3d linear_accel_lpf_state_ned_{Eigen::Vector3d::Zero()};
-  std::array<bool, 3> linear_accel_lpf_initialized_{{false, false, false}};
-
-  double angular_accel_lpf_cutoff_hz_{0.0};
-  Eigen::Vector3d angular_accel_lpf_state_body_{Eigen::Vector3d::Zero()};
-  bool angular_accel_lpf_initialized_{false};
-
-  double velocity_disturbance_lpf_cutoff_hz_{0.0};
-  Eigen::Vector3d velocity_disturbance_lpf_state_ned_{Eigen::Vector3d::Zero()};
-  bool velocity_disturbance_lpf_initialized_{false};
-
-  double angular_velocity_disturbance_lpf_cutoff_hz_{0.0};
-  Eigen::Vector3d angular_velocity_disturbance_lpf_state_body_{Eigen::Vector3d::Zero()};
-  bool angular_velocity_disturbance_lpf_initialized_{false};
+  Vec3LowPass linear_accel_lpf_{};
+  Vec3RateEstimator angular_accel_estimator_{};
+  Vec3LowPass velocity_disturbance_lpf_{};
+  Vec3LowPass angular_velocity_disturbance_lpf_{};
 };
 
 }  // namespace tanh_ctrl

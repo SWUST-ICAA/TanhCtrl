@@ -34,12 +34,23 @@ target_include_directories(tanh_ctrl_common PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+add_library(tanh_ctrl_blocks
+  src/tanh_blocks.cpp
+)
+
+target_link_libraries(tanh_ctrl_blocks Eigen3::Eigen)
+target_include_directories(tanh_ctrl_blocks PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 add_library(tanh_ctrl_core
   src/tanh_controller.cpp
 )
 
 target_link_libraries(tanh_ctrl_core
   Eigen3::Eigen
+  tanh_ctrl_blocks
   tanh_ctrl_common
 )
 target_include_directories(tanh_ctrl_core PUBLIC
@@ -75,7 +86,12 @@ target_include_directories(tanh_ctrl_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-install(TARGETS tanh_ctrl_common tanh_ctrl_core tanh_ctrl_node_lib tanh_ctrl_node
+install(TARGETS
+  tanh_ctrl_common
+  tanh_ctrl_blocks
+  tanh_ctrl_core
+  tanh_ctrl_node_lib
+  tanh_ctrl_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -119,6 +135,19 @@ if(BUILD_TESTING)
   add_test(
     NAME test_tanh_controller
     COMMAND test_tanh_controller
+  )
+
+  add_executable(test_tanh_blocks
+    test/test_tanh_blocks.cpp
+  )
+  target_link_libraries(test_tanh_blocks tanh_ctrl_blocks)
+  target_include_directories(test_tanh_blocks PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+  add_test(
+    NAME test_tanh_blocks
+    COMMAND test_tanh_blocks
   )
 
   ament_add_gtest(test_tanh_node_logic
