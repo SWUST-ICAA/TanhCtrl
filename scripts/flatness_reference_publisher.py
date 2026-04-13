@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass
 import math
 from typing import Optional, Tuple
 
@@ -20,7 +21,23 @@ from tanh_ctrl.msg import FlatTrajectoryReference
 
 
 Array3 = np.ndarray
-TrajectorySample = Tuple[Array3, Array3, Array3]
+
+
+@dataclass(frozen=True)
+class TrajectorySample:
+    position: Array3
+    velocity: Array3
+    acceleration: Array3
+
+
+@dataclass(frozen=True)
+class FlatReference:
+    position: Array3
+    velocity: Array3
+    acceleration: Array3
+    yaw: float
+    body_rates: Array3
+    body_torque: Array3
 
 
 def normalize(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
@@ -28,6 +45,12 @@ def normalize(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
     if norm < 1e-9:
         return fallback.copy()
     return vector / norm
+
+
+def assign_xyz(msg_vector, values: np.ndarray) -> None:
+    msg_vector.x = float(values[0])
+    msg_vector.y = float(values[1])
+    msg_vector.z = float(values[2])
 
 
 def quaternion_normalize(q_wxyz: np.ndarray) -> np.ndarray:
@@ -204,10 +227,10 @@ def apply_tilt(
     tilt_angle_rad: float,
 ) -> TrajectorySample:
     rotation = rotation_x(tilt_angle_rad)
-    return (
-        center_ned + rotation @ position_local,
-        rotation @ velocity_local,
-        rotation @ acceleration_local,
+    return TrajectorySample(
+        position=center_ned + rotation @ position_local,
+        velocity=rotation @ velocity_local,
+        acceleration=rotation @ acceleration_local,
     )
 
 
@@ -225,10 +248,10 @@ def circle_ned(
     vy = radius * omega * math.cos(omega * t)
     ax = -radius * omega * omega * math.cos(omega * t)
     ay = -radius * omega * omega * math.sin(omega * t)
-    return (
-        np.array([x, y, z_ned], dtype=float),
-        np.array([vx, vy, 0.0], dtype=float),
-        np.array([ax, ay, 0.0], dtype=float),
+    return TrajectorySample(
+        position=np.array([x, y, z_ned], dtype=float),
+        velocity=np.array([vx, vy, 0.0], dtype=float),
+        acceleration=np.array([ax, ay, 0.0], dtype=float),
     )
 
 
@@ -247,10 +270,10 @@ def figure_eight_ned(
     vy = 2.0 * y_amplitude * omega * math.cos(2.0 * omega * t)
     ax = -x_amplitude * omega * omega * math.sin(omega * t)
     ay = -4.0 * y_amplitude * omega * omega * math.sin(2.0 * omega * t)
-    return (
-        np.array([x, y, z_ned], dtype=float),
-        np.array([vx, vy, 0.0], dtype=float),
-        np.array([ax, ay, 0.0], dtype=float),
+    return TrajectorySample(
+        position=np.array([x, y, z_ned], dtype=float),
+        velocity=np.array([vx, vy, 0.0], dtype=float),
+        acceleration=np.array([ax, ay, 0.0], dtype=float),
     )
 
 
@@ -437,16 +460,6 @@ class FlatnessReferencePublisher(Node):
             return np.array([self.radius, 0.0, 0.0], dtype=float)
         return np.zeros(3, dtype=float)
 
-    def reparameterized_time(self, elapsed_s: float) -> float:
-        elapsed = max(float(elapsed_s), 0.0)
-        ramp = float(self.speed_ramp_time_s)
-        if ramp <= 0.0:
-            return elapsed
-        if elapsed >= ramp:
-            return elapsed - 0.5 * ramp
-        u = elapsed / ramp
-        return ramp * (u ** 3 - 0.5 * u ** 4)
-
     def reparameterized_kinematics(self, elapsed_s: float) -> Tuple[float, float, float]:
         elapsed = max(float(elapsed_s), 0.0)
         ramp = float(self.speed_ramp_time_s)
@@ -509,40 +522,47 @@ class FlatnessReferencePublisher(Node):
     def sample_reference_state(self, elapsed_s: float) -> TrajectorySample:
         # Apply the chain rule so speed_ramp_time_s affects both feedforward velocity and acceleration.
         path_time, path_time_dot, path_time_ddot = self.reparameterized_kinematics(elapsed_s)
-        position, path_velocity, path_acceleration = self.sample_path(path_time)
-        velocity = path_velocity * path_time_dot
-        acceleration = path_acceleration * (path_time_dot ** 2) + path_velocity * path_time_ddot
-        return position, velocity, acceleration
+        path_sample = self.sample_path(path_time)
+        velocity = path_sample.velocity * path_time_dot
+        acceleration = (
+            path_sample.acceleration * (path_time_dot ** 2)
+            + path_sample.velocity * path_time_ddot
+        )
+        return TrajectorySample(
+            position=path_sample.position,
+            velocity=velocity,
+            acceleration=acceleration,
+        )
 
-    def sample_flat_reference(self, elapsed_s: float) -> dict:
+    def sample_flat_reference(self, elapsed_s: float) -> FlatReference:
         dt = self.derivative_dt
-        position, velocity, acceleration = self.sample_reference_state(elapsed_s)
-        _, velocity_p1, acceleration_p1 = self.sample_reference_state(elapsed_s + dt)
-        _, velocity_p2, acceleration_p2 = self.sample_reference_state(elapsed_s + 2.0 * dt)
+        reference_now = self.sample_reference_state(elapsed_s)
+        reference_p1 = self.sample_reference_state(elapsed_s + dt)
+        reference_p2 = self.sample_reference_state(elapsed_s + 2.0 * dt)
 
         fallback_yaw = self.locked_yaw_rad if self.yaw_mode == "fixed" else 0.0
-        yaw = self.yaw_reference(velocity, fallback_yaw)
-        yaw_p1 = self.yaw_reference(velocity_p1, yaw)
-        yaw_p2 = self.yaw_reference(velocity_p2, yaw_p1)
+        yaw = self.yaw_reference(reference_now.velocity, fallback_yaw)
+        yaw_p1 = self.yaw_reference(reference_p1.velocity, yaw)
+        yaw_p2 = self.yaw_reference(reference_p2.velocity, yaw_p1)
 
-        q_now = quaternion_from_accel_and_yaw_ned(acceleration, yaw, self.gravity)
-        q_next = quaternion_from_accel_and_yaw_ned(acceleration_p1, yaw_p1, self.gravity)
+        q_now = quaternion_from_accel_and_yaw_ned(reference_now.acceleration, yaw, self.gravity)
+        q_next = quaternion_from_accel_and_yaw_ned(reference_p1.acceleration, yaw_p1, self.gravity)
         q_next = align_quaternion_sign(q_next, q_now)
-        q_next2 = quaternion_from_accel_and_yaw_ned(acceleration_p2, yaw_p2, self.gravity)
+        q_next2 = quaternion_from_accel_and_yaw_ned(reference_p2.acceleration, yaw_p2, self.gravity)
         q_next2 = align_quaternion_sign(q_next2, q_next)
 
         body_rates = body_rates_from_quaternion_samples(q_now, q_next, dt)
         body_rates_next = body_rates_from_quaternion_samples(q_next, q_next2, dt)
         body_torque = body_torque_from_rates(body_rates, body_rates_next, dt, self.inertia_diag)
 
-        return {
-            "position": position,
-            "velocity": velocity,
-            "acceleration": acceleration,
-            "yaw": yaw,
-            "body_rates": body_rates,
-            "body_torque": body_torque,
-        }
+        return FlatReference(
+            position=reference_now.position,
+            velocity=reference_now.velocity,
+            acceleration=reference_now.acceleration,
+            yaw=yaw,
+            body_rates=body_rates,
+            body_torque=body_torque,
+        )
 
     def timer_callback(self) -> None:
         if not self.enabled:
@@ -556,27 +576,12 @@ class FlatnessReferencePublisher(Node):
         msg.header.stamp = now.to_msg()
         msg.header.frame_id = "ned"
 
-        msg.position_ned.x = float(reference["position"][0])
-        msg.position_ned.y = float(reference["position"][1])
-        msg.position_ned.z = float(reference["position"][2])
-
-        msg.velocity_ned.x = float(reference["velocity"][0])
-        msg.velocity_ned.y = float(reference["velocity"][1])
-        msg.velocity_ned.z = float(reference["velocity"][2])
-
-        msg.acceleration_ned.x = float(reference["acceleration"][0])
-        msg.acceleration_ned.y = float(reference["acceleration"][1])
-        msg.acceleration_ned.z = float(reference["acceleration"][2])
-
-        msg.body_rates_frd.x = float(reference["body_rates"][0])
-        msg.body_rates_frd.y = float(reference["body_rates"][1])
-        msg.body_rates_frd.z = float(reference["body_rates"][2])
-
-        msg.body_torque_frd.x = float(reference["body_torque"][0])
-        msg.body_torque_frd.y = float(reference["body_torque"][1])
-        msg.body_torque_frd.z = float(reference["body_torque"][2])
-
-        msg.yaw = float(reference["yaw"])
+        assign_xyz(msg.position_ned, reference.position)
+        assign_xyz(msg.velocity_ned, reference.velocity)
+        assign_xyz(msg.acceleration_ned, reference.acceleration)
+        assign_xyz(msg.body_rates_frd, reference.body_rates)
+        assign_xyz(msg.body_torque_frd, reference.body_torque)
+        msg.yaw = float(reference.yaw)
 
         self.reference_pub.publish(msg)
 

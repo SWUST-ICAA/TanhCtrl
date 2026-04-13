@@ -16,7 +16,8 @@
 #include "tanh_ctrl/msg/flat_trajectory_reference.hpp"
 #include "tanh_ctrl/tanh_ctrl.hpp"
 
-namespace tanh_ctrl {
+namespace tanh_ctrl
+{
 
 /**
  * @brief High-level mission phase managed by the controller node.
@@ -36,21 +37,22 @@ enum class MissionState
  * @param state Mission state.
  * @return Human-readable state name.
  */
-inline const char * toString(MissionState state)
+inline const char *toString(MissionState state)
 {
-  switch (state) {
-    case MissionState::WAIT_FOR_OFFBOARD:
-      return "WAIT_FOR_OFFBOARD";
-    case MissionState::WAIT_FOR_ARMING:
-      return "WAIT_FOR_ARMING";
-    case MissionState::TAKEOFF:
-      return "TAKEOFF";
-    case MissionState::HOLD:
-      return "HOLD";
-    case MissionState::TRACKING:
-      return "TRACKING";
-    default:
-      return "UNKNOWN";
+  switch (state)
+  {
+  case MissionState::WAIT_FOR_OFFBOARD:
+    return "WAIT_FOR_OFFBOARD";
+  case MissionState::WAIT_FOR_ARMING:
+    return "WAIT_FOR_ARMING";
+  case MissionState::TAKEOFF:
+    return "TAKEOFF";
+  case MissionState::HOLD:
+    return "HOLD";
+  case MissionState::TRACKING:
+    return "TRACKING";
+  default:
+    return "UNKNOWN";
   }
 }
 
@@ -68,29 +70,80 @@ public:
    *
    * @param options ROS2 node options.
    */
-  explicit tanh_ctrl_node(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit tanh_ctrl_node(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
 
-  const std::string & sensorCombinedTopic() const { return topic_sensor_combined_; }
-  const std::string & vehicleOdometryTopic() const { return topic_vehicle_odometry_; }
-  const std::string & vehicleStatusV1Topic() const { return topic_vehicle_status_v1_; }
-  const std::string & referenceTopic() const { return topic_reference_; }
-  const std::string & actuatorMotorsTopic() const { return topic_actuator_motors_; }
-  const std::string & offboardControlModeTopic() const { return topic_offboard_control_mode_; }
-  const std::string & vehicleCommandTopic() const { return topic_vehicle_command_; }
-  const std::string & vehicleThrustSetpointTopic() const
+  const std::string &sensorCombinedTopic() const
+  {
+    return topic_sensor_combined_;
+  }
+  const std::string &vehicleOdometryTopic() const
+  {
+    return topic_vehicle_odometry_;
+  }
+  const std::string &vehicleStatusV1Topic() const
+  {
+    return topic_vehicle_status_v1_;
+  }
+  const std::string &referenceTopic() const
+  {
+    return topic_reference_;
+  }
+  const std::string &actuatorMotorsTopic() const
+  {
+    return topic_actuator_motors_;
+  }
+  const std::string &offboardControlModeTopic() const
+  {
+    return topic_offboard_control_mode_;
+  }
+  const std::string &vehicleCommandTopic() const
+  {
+    return topic_vehicle_command_;
+  }
+  const std::string &vehicleThrustSetpointTopic() const
   {
     return topic_vehicle_thrust_setpoint_;
   }
-  bool publishOffboardControlModeEnabled() const { return publish_offboard_control_mode_; }
-  bool publishVehicleThrustSetpointEnabled() const { return publish_vehicle_thrust_setpoint_; }
-  bool autoOffboardEnabled() const { return enable_auto_offboard_; }
-  bool autoArmEnabled() const { return enable_auto_arm_; }
-  int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
-  double motorForceMax() const { return motor_force_max_; }
-  double thrustModelFactor() const { return thrust_model_factor_; }
-  const PositionGains & positionGains() const { return controller_.getPositionGains(); }
-  std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
-  double allocationBeta() const { return controller_.getAllocationParams().beta; }
+  bool publishOffboardControlModeEnabled() const
+  {
+    return publish_offboard_control_mode_;
+  }
+  bool publishVehicleThrustSetpointEnabled() const
+  {
+    return publish_vehicle_thrust_setpoint_;
+  }
+  bool autoOffboardEnabled() const
+  {
+    return enable_auto_offboard_;
+  }
+  bool autoArmEnabled() const
+  {
+    return enable_auto_arm_;
+  }
+  int offboardWarmupSetpointCount() const
+  {
+    return offboard_setpoint_warmup_;
+  }
+  double motorForceMax() const
+  {
+    return motor_force_max_;
+  }
+  double thrustModelFactor() const
+  {
+    return thrust_model_factor_;
+  }
+  const PositionGains &positionGains() const
+  {
+    return controller_.getPositionGains();
+  }
+  std::array<int, 4> motorOutputMap() const
+  {
+    return motor_output_map_;
+  }
+  double allocationBeta() const
+  {
+    return controller_.getAllocationParams().beta;
+  }
 
 private:
   /**
@@ -194,15 +247,6 @@ private:
   void loadMotorOutputMap();
 
   /**
-   * @brief Read a length-3 ROS parameter into an Eigen vector.
-   *
-   * @param node ROS2 node.
-   * @param name Parameter name.
-   * @return Parameter value as `Eigen::Vector3d`.
-   */
-  static Eigen::Vector3d getVec3Param(rclcpp::Node & node, const std::string & name);
-
-  /**
    * @brief Compute the control-loop timestep from the current time.
    *
    * @param now_us Current ROS time in microseconds.
@@ -225,6 +269,37 @@ private:
   void updateHoldReference(double target_z_ned);
 
   /**
+   * @brief Refresh the hold reference at the current altitude.
+   */
+  void updateCurrentHoldReference();
+
+  /**
+   * @brief Reset mission progress and enter a wait/hold-style state.
+   *
+   * @param next_state State entered after resetting progress.
+   * @param reason Transition reason for logging.
+   */
+  void transitionToWaitState(MissionState next_state, const char *reason);
+
+  /**
+   * @brief Reset the takeoff completion timers.
+   */
+  void resetTakeoffProgress();
+
+  /**
+   * @brief Check whether takeoff altitude has been held long enough.
+   *
+   * @param now_us Current ROS time in microseconds.
+   * @return True when the takeoff hold condition is satisfied.
+   */
+  bool takeoffHoldComplete(uint64_t now_us);
+
+  /**
+   * @brief Publish the start-tracking signal only once.
+   */
+  void publishStartTrackingOnce();
+
+  /**
    * @brief Check whether the external trajectory reference is still fresh.
    *
    * @param now_us Current ROS time in microseconds.
@@ -238,7 +313,7 @@ private:
    * @param next_state New mission state.
    * @param reason Transition reason for logging.
    */
-  void setMissionState(MissionState next_state, const char * reason);
+  void setMissionState(MissionState next_state, const char *reason);
 
   /**
    * @brief Reset mission progress flags when reverting to hold/wait states.
@@ -270,7 +345,7 @@ private:
    * @param now_us Current ROS time in microseconds.
    * @return Active trajectory reference, or nullptr when none is valid.
    */
-  const TrajectoryRef * selectActiveReference(uint64_t now_us) const;
+  const TrajectoryRef *selectActiveReference(uint64_t now_us) const;
 
   /**
    * @brief Publish direct actuator motor commands.
@@ -278,7 +353,7 @@ private:
    * @param out Controller output.
    * @param now_us Current ROS time in microseconds.
    */
-  void publishMotorCommands(const ControlOutput & out, uint64_t now_us);
+  void publishMotorCommands(const ControlOutput &out, uint64_t now_us);
 
   /**
    * @brief Publish PX4 thrust setpoint heartbeat used by the land detector.
@@ -286,7 +361,7 @@ private:
    * @param out Controller output.
    * @param now_us Current ROS time in microseconds.
    */
-  void publishThrustSetpoint(const ControlOutput & out, uint64_t now_us);
+  void publishThrustSetpoint(const ControlOutput &out, uint64_t now_us);
 
 private:
   // ROS interfaces
@@ -310,8 +385,6 @@ private:
   bool has_external_ref_{false};
   TrajectoryRef hold_ref_{};
   bool has_hold_ref_{false};
-  uint64_t last_odom_us_{0};
-  double last_odom_dt_{0.01};
   uint64_t last_control_us_{0};
   uint64_t last_reference_receive_us_{0};
   bool is_armed_{false};
@@ -362,4 +435,4 @@ private:
   double mission_request_interval_s_{1.0};
 };
 
-}  // namespace tanh_ctrl
+} // namespace tanh_ctrl
