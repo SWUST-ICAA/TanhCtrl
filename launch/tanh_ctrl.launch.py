@@ -4,29 +4,24 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 
-def _package_source_root() -> Path:
-    launch_file = Path(__file__).resolve()
-    package_root = launch_file.parents[1]
+def _config_root() -> Path:
+    package_root = Path(__file__).resolve().parents[1]
     if (package_root / "CMakeLists.txt").exists():
-        return package_root
+        return package_root / "config"
 
-    workspace_root = next((parent.parent for parent in launch_file.parents if parent.name == "install"), None)
+    workspace_root = next((parent.parent for parent in Path(__file__).resolve().parents if parent.name == "install"), None)
     if workspace_root is None:
-        return package_root
+        return package_root / "config"
 
-    src_root = workspace_root / "src"
-    if not src_root.is_dir():
-        return package_root
+    source_config = workspace_root / "src" / "TanhCtrl" / "config"
+    if source_config.is_dir():
+        return source_config
 
-    for config_path in src_root.rglob("config/tanh_ctrl.yaml"):
-        if (config_path.parent.parent / "launch").is_dir():
-            return config_path.parent.parent
-
-    return package_root
+    return package_root / "config"
 
 
 def _config_path(filename: str) -> str:
-    return str(_package_source_root() / "config" / filename)
+    return str(_config_root() / filename)
 
 
 def generate_launch_description():

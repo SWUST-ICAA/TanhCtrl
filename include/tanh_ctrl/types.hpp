@@ -1,55 +1,11 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <Eigen/Geometry>
 
-#include <algorithm>
 #include <cmath>
 
 namespace tanh_ctrl {
-
-/**
- * @brief Build a 3-axis vector with shared planar gains and an independent yaw/vertical axis.
- *
- * The x/y entries receive the same planar value, while z receives the axial value.
- *
- * @param planar Value used for the x/y axes.
- * @param axial Value used for the z axis.
- * @return Vector `[planar, planar, axial]`.
- */
-inline Eigen::Vector3d planarAxisVec(double planar, double axial)
-{
-  const double planar_value = std::isfinite(planar) ? planar : 0.0;
-  const double axial_value = std::isfinite(axial) ? axial : planar_value;
-  return Eigen::Vector3d(planar_value, planar_value, axial_value);
-}
-
-/**
- * @brief Invert a PX4 THR_MDL_FAC-style normalized thrust model.
- *
- * PX4 models normalized thrust as:
- * `rel_thrust = factor * rel_signal^2 + (1 - factor) * rel_signal`
- *
- * This helper computes `rel_signal` from `rel_thrust`.
- *
- * @param relative_thrust Normalized thrust in [0, 1].
- * @param thrust_model_factor PX4-style thrust model factor in [0, 1].
- * @return Normalized throttle / actuator signal in [0, 1].
- */
-inline double throttleFromRelativeThrust(double relative_thrust, double thrust_model_factor)
-{
-  const double rel_thrust = std::clamp(relative_thrust, 0.0, 1.0);
-  const double factor = std::clamp(thrust_model_factor, 0.0, 1.0);
-
-  if (factor <= 1e-9) {
-    return rel_thrust;
-  }
-
-  const double a = factor;
-  const double b = 1.0 - factor;
-  const double tmp1 = b / (2.0 * a);
-  const double tmp2 = (b * b) / (4.0 * a * a);
-  return std::clamp(-tmp1 + std::sqrt(tmp2 + rel_thrust / a), 0.0, 1.0);
-}
 
 /**
  * @brief Quadrotor state expressed in the controller frames.
@@ -74,8 +30,8 @@ struct TrajectoryRef
   Eigen::Vector3d position_ned{Eigen::Vector3d::Zero()};  ///< Desired position in NED [m].
   Eigen::Vector3d velocity_ned{Eigen::Vector3d::Zero()};  ///< Desired velocity in NED [m/s].
   Eigen::Vector3d acceleration_ned{Eigen::Vector3d::Zero()};  ///< Desired acceleration in NED [m/s^2].
-  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in body FRD [rad/s].
-  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired body torque feedforward in FRD [N*m].
+  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in reference-body FRD [rad/s].
+  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired torque feedforward in reference-body FRD [N*m].
   double yaw{0.0};  ///< Desired yaw angle [rad].
   bool has_angular_velocity_feedforward{false};  ///< True when the body-rate feedforward is valid.
   bool has_torque_feedforward{false};  ///< True when the body-torque feedforward is valid.
@@ -126,12 +82,12 @@ struct AllocationParams
 struct AttitudeReference
 {
   Eigen::Quaterniond attitude_body_to_ned{Eigen::Quaterniond::Identity()};  ///< Desired attitude from body FRD to NED.
-  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in body FRD [rad/s].
-  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired body torque feedforward in FRD [N*m].
+  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};  ///< Desired angular velocity in reference-body FRD [rad/s].
+  Eigen::Vector3d torque_body{Eigen::Vector3d::Zero()};  ///< Desired torque feedforward in reference-body FRD [N*m].
   Eigen::Vector3d thrust_direction_ned{Eigen::Vector3d::UnitZ()};  ///< Desired body z-axis in NED.
   double collective_thrust{0.0};  ///< Desired collective thrust magnitude [N].
-  bool has_angular_velocity_feedforward{false};  ///< True when body-rate feedforward is valid.
-  bool has_torque_feedforward{false};  ///< True when body-torque feedforward is valid.
+  bool has_angular_velocity_feedforward{false};  ///< True when the body-rate feedforward is valid.
+  bool has_torque_feedforward{false};  ///< True when the body-torque feedforward is valid.
   bool valid{false};  ///< True when the reference is valid.
 };
 
