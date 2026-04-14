@@ -36,10 +36,17 @@ public:
   void reset();
 
   bool compute(const VehicleState & state, const TrajectoryRef & ref, double dt, ControlOutput * out);
+  bool computePositionLoop(
+    const VehicleState & state, const TrajectoryRef & ref, double dt,
+    AttitudeReference * attitude_reference);
+  bool computeAttitudeLoop(
+    const VehicleState & state, const AttitudeReference & attitude_reference, double dt,
+    ControlOutput * out);
 
 private:
   static double sanitizeCutoff(double cutoff_hz);
   static Eigen::Vector3d sanitizeCutoff(const Eigen::Vector3d & cutoff_hz);
+  void initializeLoopState(const VehicleState & state);
 
   void computePosition(
     const VehicleState & state, const TrajectoryRef & ref, double dt,

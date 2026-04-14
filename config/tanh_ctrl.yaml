@@ -4,8 +4,6 @@ tanh_ctrl:
       reference: /tanh_ctrl/reference
       start_tracking: /mission/start_tracking
 
-    control_rate_hz: 1000.0
-
     model:
       mass: 2.0643076923076915
       gravity: 9.81

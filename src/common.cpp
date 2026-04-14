@@ -12,6 +12,8 @@ namespace
 constexpr double kMinPositiveZ = 1e-3;
 constexpr double kSmallNorm = 1e-9;
 constexpr double kMinCollectiveThrust = 1e-6;
+constexpr double kMinLoopDt = 1e-4;
+constexpr double kMaxLoopDt = 0.1;
 
 }  // namespace
 
@@ -20,6 +22,47 @@ Eigen::Vector3d planarAxisVec(double planar, double axial)
   const double planar_value = std::isfinite(planar) ? planar : 0.0;
   const double axial_value = std::isfinite(axial) ? axial : planar_value;
   return Eigen::Vector3d(planar_value, planar_value, axial_value);
+}
+
+uint64_t selectMessageTimestampUs(
+  uint64_t timestamp_sample_us, uint64_t timestamp_us, uint64_t fallback_us)
+{
+  if (timestamp_sample_us != 0) {
+    return timestamp_sample_us;
+  }
+  if (timestamp_us != 0) {
+    return timestamp_us;
+  }
+  return fallback_us;
+}
+
+double computeLoopDtFromSample(uint64_t sample_timestamp_us, uint64_t * last_sample_timestamp_us)
+{
+  if (!last_sample_timestamp_us || sample_timestamp_us == 0) {
+    return kMinLoopDt;
+  }
+
+  if (*last_sample_timestamp_us == 0 || sample_timestamp_us <= *last_sample_timestamp_us) {
+    *last_sample_timestamp_us = sample_timestamp_us;
+    return kMinLoopDt;
+  }
+
+  const double dt =
+    static_cast<double>(sample_timestamp_us - *last_sample_timestamp_us) * 1e-6;
+  *last_sample_timestamp_us = sample_timestamp_us;
+  return std::clamp(dt, kMinLoopDt, kMaxLoopDt);
+}
+
+Eigen::Vector3d estimateLinearAccelerationNed(
+  const Eigen::Vector3d & current_velocity_ned, const Eigen::Vector3d & previous_velocity_ned,
+  double dt)
+{
+  if (!current_velocity_ned.allFinite() || !previous_velocity_ned.allFinite() ||
+      !std::isfinite(dt) || dt <= 0.0) {
+    return Eigen::Vector3d::Zero();
+  }
+
+  return (current_velocity_ned - previous_velocity_ned) / dt;
 }
 
 double throttleFromRelativeThrust(double relative_thrust, double thrust_model_factor)

@@ -3,7 +3,6 @@
 #include <Eigen/Dense>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -97,11 +96,10 @@ bool requestDue(uint64_t now_us, uint64_t last_request_us, double interval_s)
   return last_request_us == 0 || elapsedSeconds(now_us, last_request_us) >= interval_s;
 }
 
-constexpr double kMinControlDt = 1e-4;
-constexpr double kMaxControlDt = 0.1;
 constexpr double kMinRequestIntervalS = 0.1;
 
-constexpr char kSensorCombinedTopic[] = "/fmu/out/sensor_combined";
+constexpr char kVehicleAttitudeTopic[] = "/fmu/out/vehicle_attitude";
+constexpr char kVehicleAngularVelocityTopic[] = "/fmu/out/vehicle_angular_velocity";
 constexpr char kVehicleOdometryTopic[] = "/fmu/out/vehicle_odometry";
 constexpr char kVehicleStatusV1Topic[] = "/fmu/out/vehicle_status_v1";
 constexpr char kActuatorMotorsTopic[] = "/fmu/in/actuator_motors";
@@ -230,7 +228,6 @@ void TanhNode::declareParameters()
   this->declare_parameter<std::string>("topics.reference", "/tanh_ctrl/reference");
   this->declare_parameter<std::string>("topics.start_tracking", "/mission/start_tracking");
 
-  this->declare_parameter<double>("control_rate_hz", 100.0);
   this->declare_parameter<double>("mission.takeoff_target_z", -2.0);
   this->declare_parameter<double>("mission.takeoff_z_threshold", 0.2);
   this->declare_parameter<double>("mission.takeoff_hold_time_s", 2.0);
@@ -295,13 +292,15 @@ void TanhNode::createRosInterfaces()
   odom_sub_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
     topic_vehicle_odometry_, qos_px4_out,
     std::bind(&TanhNode::odomCallback, this, std::placeholders::_1));
+  attitude_sub_ = this->create_subscription<px4_msgs::msg::VehicleAttitude>(
+    topic_vehicle_attitude_, qos_px4_out,
+    std::bind(&TanhNode::attitudeCallback, this, std::placeholders::_1));
+  angular_velocity_sub_ = this->create_subscription<px4_msgs::msg::VehicleAngularVelocity>(
+    topic_vehicle_angular_velocity_, qos_px4_out,
+    std::bind(&TanhNode::angularVelocityCallback, this, std::placeholders::_1));
   vehicle_status_sub_ = this->create_subscription<px4_msgs::msg::VehicleStatus>(
     topic_vehicle_status_v1_, qos_px4_out,
     std::bind(&TanhNode::vehicleStatusCallback, this, std::placeholders::_1));
-
-  accel_sub_ = this->create_subscription<px4_msgs::msg::SensorCombined>(
-    topic_sensor_combined_, qos_px4_out,
-    std::bind(&TanhNode::accelCallback, this, std::placeholders::_1));
   reference_sub_ = this->create_subscription<msg::FlatTrajectoryReference>(
     topic_reference_, qos_default,
     std::bind(&TanhNode::referenceCallback, this, std::placeholders::_1));
@@ -317,11 +316,6 @@ void TanhNode::createRosInterfaces()
   start_tracking_pub_ = this->create_publisher<std_msgs::msg::Bool>(
     topic_start_tracking_, rclcpp::QoS(1).reliable().transient_local());
   publishStartTrackingSignal(false);
-
-  const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, control_rate_hz_));
-  timer_ = this->create_wall_timer(
-    std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    std::bind(&TanhNode::controlLoop, this));
 }
 
 void TanhNode::loadParams()
@@ -337,7 +331,8 @@ void TanhNode::loadParams()
 
 void TanhNode::loadGeneralParams()
 {
-  topic_sensor_combined_ = kSensorCombinedTopic;
+  topic_vehicle_attitude_ = kVehicleAttitudeTopic;
+  topic_vehicle_angular_velocity_ = kVehicleAngularVelocityTopic;
   topic_vehicle_odometry_ = kVehicleOdometryTopic;
   topic_vehicle_status_v1_ = kVehicleStatusV1Topic;
   topic_reference_ = this->get_parameter("topics.reference").as_string();
@@ -347,7 +342,6 @@ void TanhNode::loadGeneralParams()
   topic_vehicle_thrust_setpoint_ = kVehicleThrustSetpointTopic;
   topic_start_tracking_ = this->get_parameter("topics.start_tracking").as_string();
 
-  control_rate_hz_ = this->get_parameter("control_rate_hz").as_double();
   publish_offboard_control_mode_ = kPublishOffboardControlMode;
   publish_vehicle_thrust_setpoint_ = kPublishVehicleThrustSetpoint;
   enable_auto_offboard_ = kAutoOffboard;
@@ -464,16 +458,6 @@ void TanhNode::loadMotorOutputMap()
   motor_output_map_ = kMotorOutputMap;
 }
 
-double TanhNode::computeControlDt(uint64_t now_us)
-{
-  double dt = 1.0 / std::max(1.0, control_rate_hz_);
-  if (last_control_us_ != 0 && now_us > last_control_us_) {
-    dt = static_cast<double>(now_us - last_control_us_) * 1e-6;
-  }
-  last_control_us_ = now_us;
-  return std::clamp(dt, kMinControlDt, kMaxControlDt);
-}
-
 void TanhNode::publishOffboardControlMode(uint64_t now_us)
 {
   if (!publish_offboard_control_mode_ || !offboard_mode_pub_) {
@@ -499,11 +483,10 @@ void TanhNode::odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg)
   }
 
   const bool position_ok = isFiniteVec3(msg->position);
-  const bool quaternion_ok = isFiniteQuat(msg->q);
-  if (!position_ok || !quaternion_ok) {
+  if (!position_ok) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 2000,
-      "vehicle_odometry包含无效数据(position/q为NaN)，等待估计器就绪...");
+      "vehicle_odometry包含无效位置数据(position为NaN)，等待估计器就绪...");
     return;
   }
 
@@ -514,19 +497,16 @@ void TanhNode::odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg)
       static_cast<unsigned>(msg->pose_frame));
   }
 
-  Eigen::Quaterniond attitude(msg->q[0], msg->q[1], msg->q[2], msg->q[3]);
-  attitude.normalize();
-  state_.q_body_to_ned = attitude;
-  current_yaw_ = quaternionToYaw(attitude);
+  const uint64_t sample_us = selectMessageTimestampUs(
+    msg->timestamp_sample, msg->timestamp, nowMicros(*this->get_clock()));
 
   state_.position_ned = Eigen::Vector3d(msg->position[0], msg->position[1], msg->position[2]);
-  state_.angular_velocity_body = eigenFromArray3OrZero(msg->angular_velocity);
 
   const Eigen::Vector3d velocity_raw = eigenFromArray3OrZero(msg->velocity);
   if (msg->velocity_frame == px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_NED) {
     state_.velocity_ned = velocity_raw;
   } else if (msg->velocity_frame == px4_msgs::msg::VehicleOdometry::VELOCITY_FRAME_BODY_FRD) {
-    state_.velocity_ned = attitude * velocity_raw;
+    state_.velocity_ned = state_.q_body_to_ned * velocity_raw;
   } else {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -535,7 +515,62 @@ void TanhNode::odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg)
     state_.velocity_ned = velocity_raw;
   }
 
-  has_state_ = true;
+  if (has_last_odometry_velocity_ && sample_us > last_odometry_velocity_sample_us_) {
+    const double velocity_dt =
+      static_cast<double>(sample_us - last_odometry_velocity_sample_us_) * 1e-6;
+    state_.linear_acceleration_ned = estimateLinearAccelerationNed(
+      state_.velocity_ned, last_odometry_velocity_ned_, velocity_dt);
+  } else {
+    state_.linear_acceleration_ned.setZero();
+  }
+  last_odometry_velocity_ned_ = state_.velocity_ned;
+  last_odometry_velocity_sample_us_ = sample_us;
+  has_last_odometry_velocity_ = true;
+
+  has_position_state_ = true;
+  positionControlLoop(sample_us);
+}
+
+void TanhNode::attitudeCallback(const px4_msgs::msg::VehicleAttitude::SharedPtr msg)
+{
+  if (!msg) {
+    return;
+  }
+
+  if (!isFiniteQuat(msg->q)) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 2000,
+      "vehicle_attitude包含无效姿态四元数(q为NaN)，等待估计器就绪...");
+    return;
+  }
+
+  Eigen::Quaterniond attitude(msg->q[0], msg->q[1], msg->q[2], msg->q[3]);
+  attitude.normalize();
+  state_.q_body_to_ned = attitude;
+  current_yaw_ = quaternionToYaw(attitude);
+  has_attitude_state_ = true;
+}
+
+void TanhNode::angularVelocityCallback(
+  const px4_msgs::msg::VehicleAngularVelocity::SharedPtr msg)
+{
+  if (!msg) {
+    return;
+  }
+
+  if (!isFiniteVec3(msg->xyz)) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 2000,
+      "vehicle_angular_velocity包含无效角速度(xyz为NaN)，等待估计器就绪...");
+    return;
+  }
+
+  state_.angular_velocity_body = eigenFromArray3OrZero(msg->xyz);
+  has_angular_velocity_state_ = true;
+
+  const uint64_t sample_us = selectMessageTimestampUs(
+    msg->timestamp_sample, msg->timestamp, nowMicros(*this->get_clock()));
+  attitudeControlLoop(sample_us);
 }
 
 void TanhNode::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
@@ -562,30 +597,6 @@ void TanhNode::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedP
       "Detected offboard exit, nav_state changed from %u to %u. Controller will shut down.",
       static_cast<unsigned>(previous_nav_state), static_cast<unsigned>(msg->nav_state));
   }
-}
-
-void TanhNode::accelCallback(const px4_msgs::msg::SensorCombined::SharedPtr msg)
-{
-  if (!msg || !has_state_) {
-    return;
-  }
-
-  const float ax = msg->accelerometer_m_s2[0];
-  const float ay = msg->accelerometer_m_s2[1];
-  const float az = msg->accelerometer_m_s2[2];
-  if (!std::isfinite(ax) || !std::isfinite(ay) || !std::isfinite(az)) {
-    return;
-  }
-
-  const Eigen::Vector3d accel_body(ax, ay, az);
-  Eigen::Vector3d accel_ned = state_.q_body_to_ned * accel_body;
-  if (!accel_ned.allFinite()) {
-    state_.linear_acceleration_ned.setZero();
-    return;
-  }
-
-  accel_ned.z() += gravity_ned_;
-  state_.linear_acceleration_ned = accel_ned;
 }
 
 void TanhNode::referenceCallback(const msg::FlatTrajectoryReference::SharedPtr msg)
@@ -640,7 +651,7 @@ void TanhNode::publishStartTrackingSignal(bool enabled)
 
 void TanhNode::updateHoldReference(double target_z_ned)
 {
-  if (!has_state_) {
+  if (!has_position_state_) {
     return;
   }
 
@@ -713,12 +724,12 @@ void TanhNode::handleMissionPreconditions()
 
 void TanhNode::maybeSendAutomaticRequests(uint64_t now_us)
 {
-  if (has_state_ && offboard_counter_ < offboard_setpoint_warmup_) {
+  if (has_position_loop_command_ && offboard_counter_ < offboard_setpoint_warmup_) {
     ++offboard_counter_;
   }
 
   const bool warmup_done = offboard_counter_ >= offboard_setpoint_warmup_;
-  if (!has_state_ || !warmup_done) {
+  if (!has_position_loop_command_ || !warmup_done) {
     return;
   }
 
@@ -859,20 +870,9 @@ void TanhNode::publishThrustSetpoint(const ControlOutput & out, uint64_t now_us)
   thrust_sp_pub_->publish(thrust_sp);
 }
 
-void TanhNode::controlLoop()
+void TanhNode::positionControlLoop(uint64_t sample_us)
 {
-  if (exit_requested_) {
-    RCLCPP_ERROR(this->get_logger(), "Shutting down controller because offboard mode was exited.");
-    rclcpp::shutdown();
-    return;
-  }
-
-  const uint64_t now_us = nowMicros(*this->get_clock());
-  const double dt = computeControlDt(now_us);
-
-  publishOffboardControlMode(now_us);
-
-  if (!has_state_) {
+  if (!has_position_state_ || !has_attitude_state_) {
     return;
   }
 
@@ -881,16 +881,51 @@ void TanhNode::controlLoop()
   }
 
   handleMissionPreconditions();
-  maybeSendAutomaticRequests(now_us);
-  updateMissionStateMachine(now_us);
+  updateMissionStateMachine(sample_us);
 
-  const TrajectoryRef * active_ref = selectActiveReference(now_us);
+  const TrajectoryRef * active_ref = selectActiveReference(sample_us);
   if (!active_ref || !active_ref->valid) {
+    position_loop_command_ = AttitudeReference{};
+    has_position_loop_command_ = false;
+    return;
+  }
+
+  AttitudeReference position_loop_command{};
+  const double dt = computeLoopDtFromSample(sample_us, &last_position_loop_us_);
+  if (!controller_.computePositionLoop(state_, *active_ref, dt, &position_loop_command)) {
+    position_loop_command_ = AttitudeReference{};
+    has_position_loop_command_ = false;
+    return;
+  }
+
+  position_loop_command_ = position_loop_command;
+  has_position_loop_command_ = position_loop_command_.valid;
+}
+
+void TanhNode::attitudeControlLoop(uint64_t sample_us)
+{
+  if (exit_requested_) {
+    RCLCPP_ERROR(this->get_logger(), "Shutting down controller because offboard mode was exited.");
+    rclcpp::shutdown();
+    return;
+  }
+
+  const uint64_t now_us = nowMicros(*this->get_clock());
+  publishOffboardControlMode(now_us);
+
+  if (!has_position_state_ || !has_attitude_state_ || !has_angular_velocity_state_) {
+    return;
+  }
+
+  maybeSendAutomaticRequests(now_us);
+
+  if (!has_position_loop_command_ || !position_loop_command_.valid) {
     return;
   }
 
   ControlOutput out;
-  if (!controller_.compute(state_, *active_ref, dt, &out)) {
+  const double dt = computeLoopDtFromSample(sample_us, &last_attitude_loop_us_);
+  if (!controller_.computeAttitudeLoop(state_, position_loop_command_, dt, &out)) {
     return;
   }
 

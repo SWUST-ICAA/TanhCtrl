@@ -112,6 +112,19 @@ void TanhController::reset()
   reset_low_pass(angular_velocity_disturbance_lpf_);
 }
 
+void TanhController::initializeLoopState(const VehicleState & state)
+{
+  if (!first_run_) {
+    return;
+  }
+
+  velocity_error_hat_ned_.setZero();
+  angular_velocity_error_hat_body_.setZero();
+  angular_accel_estimator_.last_value = state.angular_velocity_body;
+  angular_accel_estimator_.has_last_value = true;
+  first_run_ = false;
+}
+
 double TanhController::sanitizeCutoff(double cutoff_hz)
 {
   return (std::isfinite(cutoff_hz) && cutoff_hz > 0.0) ? cutoff_hz : 0.0;
@@ -126,32 +139,50 @@ Eigen::Vector3d TanhController::sanitizeCutoff(const Eigen::Vector3d & cutoff_hz
 bool TanhController::compute(
   const VehicleState & state, const TrajectoryRef & ref, double dt, ControlOutput * out)
 {
-  if (!out || !ref.valid) {
+  AttitudeReference attitude_reference{};
+  if (!computePositionLoop(state, ref, dt, &attitude_reference)) {
+    return false;
+  }
+  return computeAttitudeLoop(state, attitude_reference, dt, out);
+}
+
+bool TanhController::computePositionLoop(
+  const VehicleState & state, const TrajectoryRef & ref, double dt,
+  AttitudeReference * attitude_reference)
+{
+  if (!attitude_reference || !ref.valid) {
     return false;
   }
 
-  if (first_run_) {
-    velocity_error_hat_ned_.setZero();
-    angular_velocity_error_hat_body_.setZero();
-    angular_accel_estimator_.last_value = state.angular_velocity_body;
-    angular_accel_estimator_.has_last_value = true;
-    first_run_ = false;
-  }
-
+  initializeLoopState(state);
   dt = std::clamp(dt, kMinDt, kMaxDt);
 
   Eigen::Vector3d thrust_vec_ned = Eigen::Vector3d::Zero();
   double thrust_norm = 0.0;
   computePosition(state, ref, dt, &thrust_vec_ned, &thrust_norm);
 
-  const AttitudeReference attitude_reference = computeAttitudeReference(thrust_vec_ned, ref);
+  *attitude_reference = computeAttitudeReference(thrust_vec_ned, ref);
+  return attitude_reference->valid;
+}
+
+bool TanhController::computeAttitudeLoop(
+  const VehicleState & state, const AttitudeReference & attitude_reference, double dt,
+  ControlOutput * out)
+{
+  if (!out || !attitude_reference.valid) {
+    return false;
+  }
+
+  initializeLoopState(state);
+  dt = std::clamp(dt, kMinDt, kMaxDt);
 
   Eigen::Vector3d torque_body = Eigen::Vector3d::Zero();
   computeAttitude(state, attitude_reference, dt, &torque_body);
 
-  out->thrust_total = thrust_norm;
+  out->thrust_total = attitude_reference.collective_thrust;
   out->torque_body = torque_body;
-  out->motor_forces = allocateMotorForces(alloc_, thrust_norm, torque_body);
+  out->motor_forces =
+    allocateMotorForces(alloc_, attitude_reference.collective_thrust, torque_body);
   out->motor_controls =
     forcesToMotorControls(out->motor_forces, motor_force_max_, thrust_model_factor_);
   return true;

@@ -13,6 +13,24 @@ namespace tanh_ctrl {
 Eigen::Vector3d planarAxisVec(double planar, double axial);
 
 /**
+ * @brief Select the best available PX4 timestamp in microseconds.
+ */
+uint64_t selectMessageTimestampUs(
+  uint64_t timestamp_sample_us, uint64_t timestamp_us, uint64_t fallback_us);
+
+/**
+ * @brief Compute a loop dt from successive PX4 sample timestamps.
+ */
+double computeLoopDtFromSample(uint64_t sample_timestamp_us, uint64_t * last_sample_timestamp_us);
+
+/**
+ * @brief Estimate NED linear acceleration from successive NED velocity samples.
+ */
+Eigen::Vector3d estimateLinearAccelerationNed(
+  const Eigen::Vector3d & current_velocity_ned, const Eigen::Vector3d & previous_velocity_ned,
+  double dt);
+
+/**
  * @brief Invert a PX4 THR_MDL_FAC-style normalized thrust model.
  */
 double throttleFromRelativeThrust(double relative_thrust, double thrust_model_factor);
