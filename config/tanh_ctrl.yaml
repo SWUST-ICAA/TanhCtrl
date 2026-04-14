@@ -28,9 +28,9 @@ tanh_ctrl:
       horizontal:
         M_P: 2.5
         K_P: 1.0
-        M_V: 8.0
-        K_V: 0.5
-        K_Acceleration: 1.1
+        M_V: 6.0
+        K_V: 1.0
+        K_Acceleration: 1.2
         observer:
           P_V: 1.5
           L_V: 1.5
@@ -48,17 +48,17 @@ tanh_ctrl:
     attitude:
       tilt:
         M_Angle: 2.0
-        K_Angle: 5.2
-        M_AngularVelocity: 10.5
+        K_Angle: 5.0
+        M_AngularVelocity: 10.0
         K_AngularVelocity: 3.6
         K_AngularAcceleration: 0.5
         observer:
           P_AngularVelocity: 1.5
           L_AngularVelocity: 0.4
       yaw:
-        M_Angle: 1.0
-        K_Angle: 2.0
-        M_AngularVelocity: 6.0
+        M_Angle: 2.0
+        K_Angle: 3.0
+        M_AngularVelocity: 8.0
         K_AngularVelocity: 3.0
         K_AngularAcceleration: 1.0
         observer:
