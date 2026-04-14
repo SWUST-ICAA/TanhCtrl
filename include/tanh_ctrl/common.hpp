@@ -25,8 +25,7 @@ double computeLoopDtFromSample(uint64_t sample_timestamp_us, uint64_t* last_samp
 /**
  * @brief Estimate NED linear acceleration from successive NED velocity samples.
  */
-Eigen::Vector3d estimateLinearAccelerationNed(
-    const Eigen::Vector3d& current_velocity_ned, const Eigen::Vector3d& previous_velocity_ned, double dt);
+Eigen::Vector3d estimateLinearAccelerationNed(const Eigen::Vector3d& current_velocity_ned, const Eigen::Vector3d& previous_velocity_ned, double dt);
 
 /**
  * @brief Invert a PX4 THR_MDL_FAC-style normalized thrust model.
@@ -56,9 +55,7 @@ Eigen::Quaterniond computeDesiredAttitude(const Eigen::Vector3d& thrust_directio
 /**
  * @brief Rotate a vector from the reference-body frame into the current body frame.
  */
-Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(
-    const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned,
-    const Eigen::Vector3d& reference_body_vector);
+Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned, const Eigen::Vector3d& reference_body_vector);
 
 /**
  * @brief Build the inner-loop attitude reference from thrust and trajectory feedforward.

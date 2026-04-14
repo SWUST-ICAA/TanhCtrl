@@ -6,7 +6,7 @@
 #include <px4_msgs/msg/vehicle_angular_velocity.hpp>
 #include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
-#include <px4_msgs/msg/vehicle_odometry.hpp>
+#include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -58,7 +58,7 @@ class TanhNode : public rclcpp::Node {
   void loadParams();
   void createRosInterfaces();
 
-  void odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
+  void localPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg);
   void attitudeCallback(const px4_msgs::msg::VehicleAttitude::SharedPtr msg);
   void angularVelocityCallback(const px4_msgs::msg::VehicleAngularVelocity::SharedPtr msg);
   void vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
@@ -83,7 +83,7 @@ class TanhNode : public rclcpp::Node {
   void updateMissionStateMachine(uint64_t now_us);
   const TrajectoryRef* selectActiveReference(uint64_t now_us) const;
 
-  rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr local_position_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleAngularVelocity>::SharedPtr angular_velocity_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_sub_;
@@ -107,7 +107,6 @@ class TanhNode : public rclcpp::Node {
   bool has_position_loop_command_{false};
   uint64_t last_position_loop_us_{0};
   uint64_t last_attitude_loop_us_{0};
-  uint64_t last_odometry_velocity_sample_us_{0};
   uint64_t last_reference_receive_us_{0};
   bool is_armed_{false};
   bool is_offboard_{false};
@@ -115,8 +114,6 @@ class TanhNode : public rclcpp::Node {
   bool exit_requested_{false};
   uint8_t last_nav_state_{0};
   double current_yaw_{0.0};
-  Eigen::Vector3d last_odometry_velocity_ned_{Eigen::Vector3d::Zero()};
-  bool has_last_odometry_velocity_{false};
   MissionState mission_state_{WAIT_FOR_OFFBOARD};
   bool takeoff_reached_{false};
   uint64_t takeoff_reached_since_us_{0};

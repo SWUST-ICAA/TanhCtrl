@@ -41,16 +41,13 @@ double computeLoopDtFromSample(uint64_t sample_timestamp_us, uint64_t* last_samp
     return kMinLoopDt;
   }
 
-  const double dt =
-      static_cast<double>(sample_timestamp_us - *last_sample_timestamp_us) * 1e-6;
+  const double dt = static_cast<double>(sample_timestamp_us - *last_sample_timestamp_us) * 1e-6;
   *last_sample_timestamp_us = sample_timestamp_us;
   return std::clamp(dt, kMinLoopDt, kMaxLoopDt);
 }
 
-Eigen::Vector3d estimateLinearAccelerationNed(
-    const Eigen::Vector3d& current_velocity_ned, const Eigen::Vector3d& previous_velocity_ned, double dt) {
-  if (!current_velocity_ned.allFinite() || !previous_velocity_ned.allFinite() ||
-      !std::isfinite(dt) || dt <= 0.0) {
+Eigen::Vector3d estimateLinearAccelerationNed(const Eigen::Vector3d& current_velocity_ned, const Eigen::Vector3d& previous_velocity_ned, double dt) {
+  if (!current_velocity_ned.allFinite() || !previous_velocity_ned.allFinite() || !std::isfinite(dt) || dt <= 0.0) {
     return Eigen::Vector3d::Zero();
   }
 

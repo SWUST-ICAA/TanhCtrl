@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sstream>
 
@@ -9,6 +10,16 @@
 #undef private
 
 namespace tanh_ctrl {
+
+namespace {
+
+void expectVecNear(const Eigen::Vector3d& actual, const Eigen::Vector3d& expected, double tolerance) {
+  EXPECT_NEAR(actual.x(), expected.x(), tolerance);
+  EXPECT_NEAR(actual.y(), expected.y(), tolerance);
+  EXPECT_NEAR(actual.z(), expected.z(), tolerance);
+}
+
+}  // namespace
 
 class TanhNodeMissionStateTest : public ::testing::Test {
  protected:
@@ -100,6 +111,33 @@ TEST_F(TanhNodeMissionStateTest, preconditionsResetMissionProgressWhenOffboardOr
   EXPECT_EQ(node->mission_state_, WAIT_FOR_ARMING);
   EXPECT_FALSE(node->start_tracking_sent_);
   EXPECT_FALSE(node->takeoff_reached_);
+}
+
+TEST_F(TanhNodeMissionStateTest, localPositionCallbackUsesReportedVelocityAndAcceleration) {
+  auto node = makeNode();
+
+  auto msg = std::make_shared<px4_msgs::msg::VehicleLocalPosition>();
+  msg->timestamp_sample = 1'234'567;
+  msg->xy_valid = true;
+  msg->z_valid = true;
+  msg->v_xy_valid = true;
+  msg->v_z_valid = true;
+  msg->x = 1.5f;
+  msg->y = -2.5f;
+  msg->z = -3.5f;
+  msg->vx = 0.4f;
+  msg->vy = -0.6f;
+  msg->vz = 0.8f;
+  msg->ax = 0.1f;
+  msg->ay = -0.2f;
+  msg->az = 9.7f;
+
+  node->localPositionCallback(msg);
+
+  EXPECT_TRUE(node->has_position_state_);
+  expectVecNear(node->state_.position_ned, Eigen::Vector3d(1.5, -2.5, -3.5), 1e-6);
+  expectVecNear(node->state_.velocity_ned, Eigen::Vector3d(0.4, -0.6, 0.8), 1e-6);
+  expectVecNear(node->state_.linear_acceleration_ned, Eigen::Vector3d(0.1, -0.2, 9.7), 1e-6);
 }
 
 }  // namespace tanh_ctrl
