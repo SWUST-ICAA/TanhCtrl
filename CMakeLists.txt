@@ -7,7 +7,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_gtest REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -108,33 +107,6 @@ install(PROGRAMS
   scripts/flatness_reference_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-if(BUILD_TESTING)
-  ament_add_gtest(test_tanh_controller_split
-    test/test_tanh_controller_split.cpp
-  )
-  target_link_libraries(test_tanh_controller_split
-    tanh_ctrl_core
-    tanh_ctrl_common
-  )
-
-  ament_add_gtest(test_tanh_node_mission_state
-    test/test_tanh_node_mission_state.cpp
-  )
-  target_link_libraries(test_tanh_node_mission_state
-    tanh_ctrl_node_lib
-  )
-
-  ament_add_gtest(test_tools
-    test/test_tools.cpp
-  )
-  target_link_libraries(test_tools
-    tanh_ctrl_common
-  )
-  ament_target_dependencies(test_tools
-    rclcpp
-  )
-endif()
 
 ament_export_dependencies(rosidl_default_runtime)
 

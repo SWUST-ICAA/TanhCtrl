@@ -67,20 +67,17 @@ void TanhController::setLinearAccelerationLowPassHz(const Eigen::Vector3d& cutof
 }
 
 void TanhController::setAngularAccelerationLowPassHz(double cutoff_hz) {
-  angular_accel_estimator_.filter.cutoff_hz =
-      Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  angular_accel_estimator_.filter.cutoff_hz = Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
   reset_rate_estimator(angular_accel_estimator_);
 }
 
 void TanhController::setVelocityDisturbanceLowPassHz(double cutoff_hz) {
-  velocity_disturbance_lpf_.cutoff_hz =
-      Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  velocity_disturbance_lpf_.cutoff_hz = Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
   reset_low_pass(velocity_disturbance_lpf_);
 }
 
 void TanhController::setAngularVelocityDisturbanceLowPassHz(double cutoff_hz) {
-  angular_velocity_disturbance_lpf_.cutoff_hz =
-      Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
+  angular_velocity_disturbance_lpf_.cutoff_hz = Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
   reset_low_pass(angular_velocity_disturbance_lpf_);
 }
 
@@ -112,20 +109,10 @@ double TanhController::sanitizeCutoff(double cutoff_hz) {
 }
 
 Eigen::Vector3d TanhController::sanitizeCutoff(const Eigen::Vector3d& cutoff_hz) {
-  return Eigen::Vector3d(
-      sanitizeCutoff(cutoff_hz.x()), sanitizeCutoff(cutoff_hz.y()), sanitizeCutoff(cutoff_hz.z()));
+  return Eigen::Vector3d(sanitizeCutoff(cutoff_hz.x()), sanitizeCutoff(cutoff_hz.y()), sanitizeCutoff(cutoff_hz.z()));
 }
 
-bool TanhController::compute(const VehicleState& state, const TrajectoryRef& ref, double dt, ControlOutput* out) {
-  AttitudeReference attitude_reference{};
-  if (!computePositionLoop(state, ref, dt, &attitude_reference)) {
-    return false;
-  }
-  return computeAttitudeLoop(state, attitude_reference, dt, out);
-}
-
-bool TanhController::computePositionLoop(
-    const VehicleState& state, const TrajectoryRef& ref, double dt, AttitudeReference* attitude_reference) {
+bool TanhController::computePositionLoop(const VehicleState& state, const TrajectoryRef& ref, double dt, AttitudeReference* attitude_reference) {
   if (!attitude_reference || !ref.valid) {
     return false;
   }
@@ -141,8 +128,7 @@ bool TanhController::computePositionLoop(
   return attitude_reference->valid;
 }
 
-bool TanhController::computeAttitudeLoop(
-    const VehicleState& state, const AttitudeReference& attitude_reference, double dt, ControlOutput* out) {
+bool TanhController::computeAttitudeLoop(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, ControlOutput* out) {
   if (!out || !attitude_reference.valid) {
     return false;
   }
@@ -160,9 +146,7 @@ bool TanhController::computeAttitudeLoop(
   return true;
 }
 
-void TanhController::computePosition(
-    const VehicleState& state, const TrajectoryRef& ref, double dt, Eigen::Vector3d* thrust_vec_ned,
-    double* thrust_norm) {
+void TanhController::computePosition(const VehicleState& state, const TrajectoryRef& ref, double dt, Eigen::Vector3d* thrust_vec_ned, double* thrust_norm) {
   const Eigen::Vector3d position_error_ned = state.position_ned - ref.position_ned;
 
   Eigen::Vector3d linear_acceleration_ned = state.linear_acceleration_ned;
@@ -171,33 +155,23 @@ void TanhController::computePosition(
   }
   linear_acceleration_ned = update_low_pass(linear_acceleration_ned, dt, linear_accel_lpf_);
 
-  const Eigen::Vector3d tanh_position_error =
-      tanh_feedback(position_error_ned, pos_gains_.K_P, Eigen::Vector3d::Ones());
-  const Eigen::Vector3d velocity_error_ned =
-      (state.velocity_ned - ref.velocity_ned) + pos_gains_.M_P.cwiseProduct(tanh_position_error);
+  const Eigen::Vector3d tanh_position_error = tanh_feedback(position_error_ned, pos_gains_.K_P, Eigen::Vector3d::Ones());
+  const Eigen::Vector3d velocity_error_ned = (state.velocity_ned - ref.velocity_ned) + pos_gains_.M_P.cwiseProduct(tanh_position_error);
 
-  const Eigen::Vector3d velocity_estimation_error_ned =
-      velocity_error_ned - velocity_error_hat_ned_;
-  const Eigen::Vector3d velocity_disturbance_raw =
-      tanh_feedback(velocity_estimation_error_ned, pos_gains_.L_V, pos_gains_.P_V);
-  const Eigen::Vector3d velocity_disturbance_filtered =
-      update_low_pass(velocity_disturbance_raw, dt, velocity_disturbance_lpf_);
+  const Eigen::Vector3d velocity_estimation_error_ned = velocity_error_ned - velocity_error_hat_ned_;
+  const Eigen::Vector3d velocity_disturbance_raw = tanh_feedback(velocity_estimation_error_ned, pos_gains_.L_V, pos_gains_.P_V);
+  const Eigen::Vector3d velocity_disturbance_filtered = update_low_pass(velocity_disturbance_raw, dt, velocity_disturbance_lpf_);
 
   const Eigen::Vector3d gravity_ned(0.0, 0.0, gravity_);
-  const Eigen::Vector3d tanh_velocity_error =
-      tanh_feedback(velocity_error_ned, pos_gains_.K_V, Eigen::Vector3d::Ones());
+  const Eigen::Vector3d tanh_velocity_error = tanh_feedback(velocity_error_ned, pos_gains_.K_V, Eigen::Vector3d::Ones());
   const Eigen::Vector3d velocity_feedback = pos_gains_.M_V.cwiseProduct(tanh_velocity_error);
-  const Eigen::Vector3d acceleration_feedback =
-      pos_gains_.K_Acceleration.cwiseProduct(linear_acceleration_ned);
+  const Eigen::Vector3d acceleration_feedback = pos_gains_.K_Acceleration.cwiseProduct(linear_acceleration_ned);
   const auto thrustOverMassFromDisturbance = [&](const Eigen::Vector3d& disturbance) {
-    return disturbance + gravity_ned + velocity_feedback + acceleration_feedback +
-           ref.acceleration_ned;
+    return disturbance + gravity_ned + velocity_feedback + acceleration_feedback + ref.acceleration_ned;
   };
 
-  Eigen::Vector3d thrust_over_mass_control =
-      thrustOverMassFromDisturbance(velocity_disturbance_filtered);
-  Eigen::Vector3d thrust_over_mass_observer =
-      thrustOverMassFromDisturbance(velocity_disturbance_raw);
+  Eigen::Vector3d thrust_over_mass_control = thrustOverMassFromDisturbance(velocity_disturbance_filtered);
+  Eigen::Vector3d thrust_over_mass_observer = thrustOverMassFromDisturbance(velocity_disturbance_raw);
 
   applyTiltLimit(&thrust_over_mass_control, max_tilt_rad_);
   applyTiltLimit(&thrust_over_mass_observer, max_tilt_rad_);
@@ -205,8 +179,7 @@ void TanhController::computePosition(
   const Eigen::Vector3d desired_thrust_control = mass_ * thrust_over_mass_control;
   const Eigen::Vector3d desired_thrust_observer = mass_ * thrust_over_mass_observer;
 
-  const Eigen::Vector3d velocity_error_hat_dot_ned =
-      (-desired_thrust_observer / mass_) + gravity_ned + velocity_disturbance_raw;
+  const Eigen::Vector3d velocity_error_hat_dot_ned = (-desired_thrust_observer / mass_) + gravity_ned + velocity_disturbance_raw;
   velocity_error_hat_ned_ += dt * velocity_error_hat_dot_ned;
 
   if (thrust_vec_ned) {
@@ -217,20 +190,16 @@ void TanhController::computePosition(
   }
 }
 
-void TanhController::computeAttitude(
-    const VehicleState& state, const AttitudeReference& attitude_reference, double dt, Eigen::Vector3d* torque_body) {
+void TanhController::computeAttitude(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, Eigen::Vector3d* torque_body) {
   const Eigen::Quaterniond q = state.q_body_to_ned.normalized();
   const Eigen::Quaterniond q_d = attitude_reference.attitude_body_to_ned.normalized();
 
   // Trajectory feedforward is expressed in the reference-body frame and must be
   // rotated into the current body frame before it is used by the inner loop.
-  const Eigen::Vector3d desired_angular_velocity_body = attitude_reference.has_angular_velocity_feedforward
-                                                            ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_velocity_body)
-                                                            : Eigen::Vector3d::Zero();
+  const Eigen::Vector3d desired_angular_velocity_body = attitude_reference.has_angular_velocity_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_velocity_body) : Eigen::Vector3d::Zero();
   const Eigen::Vector3d desired_angular_acceleration_body = Eigen::Vector3d::Zero();
 
-  Eigen::Vector3d angular_acceleration_body =
-      update_rate_estimator(state.angular_velocity_body, dt, angular_accel_estimator_);
+  Eigen::Vector3d angular_acceleration_body = update_rate_estimator(state.angular_velocity_body, dt, angular_accel_estimator_);
   if (!angular_acceleration_body.allFinite()) {
     angular_acceleration_body.setZero();
   }
@@ -241,52 +210,30 @@ void TanhController::computeAttitude(
   }
 
   const Eigen::Vector3d attitude_error = q_error.vec();
-  const Eigen::Vector3d tanh_attitude_error =
-      tanh_feedback(attitude_error, att_gains_.K_Angle, Eigen::Vector3d::Ones());
-  const Eigen::Vector3d angular_velocity_error_body =
-      (state.angular_velocity_body - desired_angular_velocity_body) +
-      att_gains_.M_Angle.cwiseProduct(tanh_attitude_error);
+  const Eigen::Vector3d tanh_attitude_error = tanh_feedback(attitude_error, att_gains_.K_Angle, Eigen::Vector3d::Ones());
+  const Eigen::Vector3d angular_velocity_error_body = (state.angular_velocity_body - desired_angular_velocity_body) + att_gains_.M_Angle.cwiseProduct(tanh_attitude_error);
 
-  const Eigen::Vector3d angular_velocity_estimation_error_body =
-      angular_velocity_error_body - angular_velocity_error_hat_body_;
-  const Eigen::Vector3d angular_velocity_disturbance_raw = tanh_feedback(
-      angular_velocity_estimation_error_body,
-      att_gains_.L_AngularVelocity,
-      att_gains_.P_AngularVelocity);
-  const Eigen::Vector3d angular_velocity_disturbance_filtered =
-      update_low_pass(angular_velocity_disturbance_raw, dt, angular_velocity_disturbance_lpf_);
+  const Eigen::Vector3d angular_velocity_estimation_error_body = angular_velocity_error_body - angular_velocity_error_hat_body_;
+  const Eigen::Vector3d angular_velocity_disturbance_raw = tanh_feedback(angular_velocity_estimation_error_body, att_gains_.L_AngularVelocity, att_gains_.P_AngularVelocity);
+  const Eigen::Vector3d angular_velocity_disturbance_filtered = update_low_pass(angular_velocity_disturbance_raw, dt, angular_velocity_disturbance_lpf_);
 
   const Eigen::Vector3d omega_body = state.angular_velocity_body;
   const Eigen::Vector3d omega_cross_inertia_omega = omega_body.cross(inertia_ * omega_body);
   const Eigen::Matrix3d inertia_inv = inertia_.inverse();
 
-  const Eigen::Vector3d tanh_angular_velocity_error =
-      tanh_feedback(
-          angular_velocity_error_body, att_gains_.K_AngularVelocity, Eigen::Vector3d::Ones());
-  const Eigen::Vector3d angular_velocity_control_term =
-      att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
-  const Eigen::Vector3d angular_acceleration_error_body =
-      angular_acceleration_body - desired_angular_acceleration_body;
-  const Eigen::Vector3d feedforward_torque = attitude_reference.has_torque_feedforward
-                                                 ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.torque_body)
-                                                 : Eigen::Vector3d::Zero();
-  const Eigen::Vector3d angular_acceleration_feedback =
-      inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(angular_acceleration_error_body);
-  const auto desiredTorqueFromDisturbance =
-      [&](const Eigen::Vector3d& angular_velocity_disturbance) {
-        return feedforward_torque + omega_cross_inertia_omega -
-               inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term -
-               angular_acceleration_feedback;
-      };
+  const Eigen::Vector3d tanh_angular_velocity_error = tanh_feedback(angular_velocity_error_body, att_gains_.K_AngularVelocity, Eigen::Vector3d::Ones());
+  const Eigen::Vector3d angular_velocity_control_term = att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
+  const Eigen::Vector3d angular_acceleration_error_body = angular_acceleration_body - desired_angular_acceleration_body;
+  const Eigen::Vector3d feedforward_torque = attitude_reference.has_torque_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.torque_body) : Eigen::Vector3d::Zero();
+  const Eigen::Vector3d angular_acceleration_feedback = inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(angular_acceleration_error_body);
+  const auto desiredTorqueFromDisturbance = [&](const Eigen::Vector3d& angular_velocity_disturbance) {
+    return feedforward_torque + omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term - angular_acceleration_feedback;
+  };
 
-  const Eigen::Vector3d desired_torque_control =
-      desiredTorqueFromDisturbance(angular_velocity_disturbance_filtered);
-  const Eigen::Vector3d desired_torque_observer =
-      desiredTorqueFromDisturbance(angular_velocity_disturbance_raw);
+  const Eigen::Vector3d desired_torque_control = desiredTorqueFromDisturbance(angular_velocity_disturbance_filtered);
+  const Eigen::Vector3d desired_torque_observer = desiredTorqueFromDisturbance(angular_velocity_disturbance_raw);
 
-  const Eigen::Vector3d angular_velocity_error_hat_dot_body =
-      (-inertia_inv * omega_cross_inertia_omega) + inertia_inv * desired_torque_observer +
-      angular_velocity_disturbance_raw;
+  const Eigen::Vector3d angular_velocity_error_hat_dot_body = (-inertia_inv * omega_cross_inertia_omega) + inertia_inv * desired_torque_observer + angular_velocity_disturbance_raw;
   angular_velocity_error_hat_body_ += dt * angular_velocity_error_hat_dot_body;
 
   if (torque_body) {

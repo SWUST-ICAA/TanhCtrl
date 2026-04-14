@@ -40,19 +40,6 @@ class TanhNode : public rclcpp::Node {
  public:
   explicit TanhNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
-  bool publishOffboardControlModeEnabled() const { return publish_offboard_control_mode_; }
-  bool publishVehicleThrustSetpointEnabled() const {
-    return publish_vehicle_thrust_setpoint_;
-  }
-  bool autoOffboardEnabled() const { return enable_auto_offboard_; }
-  bool autoArmEnabled() const { return enable_auto_arm_; }
-  int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
-  double motorForceMax() const { return motor_force_max_; }
-  double thrustModelFactor() const { return thrust_model_factor_; }
-  const PositionGains& positionGains() const { return controller_.getPositionGains(); }
-  std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
-  double allocationBeta() const { return controller_.getAllocationParams().beta; }
-
  private:
   void declareParameters();
   void loadParams();

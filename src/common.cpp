@@ -83,9 +83,7 @@ void applyTiltLimit(Eigen::Vector3d* thrust_vector_over_mass_ned, double max_til
   }
 
   thrust_vector_over_mass_ned->z() = std::max(thrust_vector_over_mass_ned->z(), kMinPositiveZ);
-
-  const double horizontal_norm =
-      std::hypot(thrust_vector_over_mass_ned->x(), thrust_vector_over_mass_ned->y());
+  const double horizontal_norm = std::hypot(thrust_vector_over_mass_ned->x(), thrust_vector_over_mass_ned->y());
   const double max_horizontal = thrust_vector_over_mass_ned->z() * std::tan(max_tilt_rad);
 
   if (horizontal_norm <= max_horizontal || horizontal_norm <= kSmallNorm) {
@@ -126,15 +124,12 @@ Eigen::Quaterniond computeDesiredAttitude(const Eigen::Vector3d& thrust_directio
   return desired_attitude;
 }
 
-Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(
-    const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned,
-    const Eigen::Vector3d& reference_body_vector) {
+Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned, const Eigen::Vector3d& reference_body_vector) {
   if (!reference_body_vector.allFinite()) {
     return Eigen::Vector3d::Zero();
   }
 
-  const Eigen::Quaterniond reference_body_to_current_body =
-      current_body_to_ned.conjugate() * reference_body_to_ned;
+  const Eigen::Quaterniond reference_body_to_current_body = current_body_to_ned.conjugate() * reference_body_to_ned;
   return reference_body_to_current_body * reference_body_vector;
 }
 
@@ -153,11 +148,9 @@ AttitudeReference computeAttitudeReference(const Eigen::Vector3d& desired_thrust
   attitude_reference.thrust_direction_ned = thrust_vector_ned / collective_thrust;
   attitude_reference.attitude_body_to_ned = computeDesiredAttitude(attitude_reference.thrust_direction_ned, sanitizeScalar(ref.yaw));
   attitude_reference.angular_velocity_body = ref.has_angular_velocity_feedforward && ref.angular_velocity_body.allFinite() ? ref.angular_velocity_body : Eigen::Vector3d::Zero();
-  attitude_reference.has_angular_velocity_feedforward =
-      ref.has_angular_velocity_feedforward && attitude_reference.angular_velocity_body.allFinite();
+  attitude_reference.has_angular_velocity_feedforward = ref.has_angular_velocity_feedforward && attitude_reference.angular_velocity_body.allFinite();
   attitude_reference.torque_body = ref.has_torque_feedforward && ref.torque_body.allFinite() ? ref.torque_body : Eigen::Vector3d::Zero();
-  attitude_reference.has_torque_feedforward =
-      ref.has_torque_feedforward && attitude_reference.torque_body.allFinite();
+  attitude_reference.has_torque_feedforward = ref.has_torque_feedforward && attitude_reference.torque_body.allFinite();
   attitude_reference.valid = true;
 
   return attitude_reference;
@@ -168,9 +161,7 @@ Eigen::Vector4d allocateMotorForces(const AllocationParams& params, double thrus
   const double cos_beta = std::cos(params.beta);
 
   Eigen::Matrix4d mixer;
-  mixer << 1.0, 1.0, 1.0, 1.0, params.l * sin_beta, -params.l * sin_beta, -params.l * sin_beta,
-      params.l * sin_beta, params.l * cos_beta, params.l * cos_beta, -params.l * cos_beta,
-      -params.l * cos_beta, -params.cq_ct, params.cq_ct, -params.cq_ct, params.cq_ct;
+  mixer << 1.0, 1.0, 1.0, 1.0, params.l * sin_beta, -params.l * sin_beta, -params.l * sin_beta, params.l * sin_beta, params.l * cos_beta, params.l * cos_beta, -params.l * cos_beta, -params.l * cos_beta, -params.cq_ct, params.cq_ct, -params.cq_ct, params.cq_ct;
 
   Eigen::Vector4d wrench;
   wrench << thrust_total, torque_body.x(), torque_body.y(), torque_body.z();

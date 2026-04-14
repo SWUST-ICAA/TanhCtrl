@@ -23,9 +23,6 @@ class TanhController {
   void setMotorForceMax(double max_force);
   void setThrustModelFactor(double thrust_model_factor);
 
-  const PositionGains& getPositionGains() const { return pos_gains_; }
-  const AllocationParams& getAllocationParams() const { return alloc_; }
-
   void setMaxTilt(double max_tilt_rad);
   void setLinearAccelerationLowPassHz(const Eigen::Vector3d& cutoff_hz);
   void setAngularAccelerationLowPassHz(double cutoff_hz);
@@ -34,7 +31,6 @@ class TanhController {
 
   void reset();
 
-  bool compute(const VehicleState& state, const TrajectoryRef& ref, double dt, ControlOutput* out);
   bool computePositionLoop(const VehicleState& state, const TrajectoryRef& ref, double dt, AttitudeReference* attitude_reference);
   bool computeAttitudeLoop(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, ControlOutput* out);
 
