@@ -468,10 +468,10 @@ class FlatnessReferencePublisher(Node):
         if elapsed >= ramp:
             return elapsed - 0.5 * ramp, 1.0, 0.0
 
-        u = elapsed / ramp
-        path_time = ramp * (u ** 3 - 0.5 * u ** 4)
-        path_time_dot = 3.0 * u ** 2 - 2.0 * u ** 3
-        path_time_ddot = (6.0 * u - 6.0 * u ** 2) / ramp
+        # Integrate a linear speed scale from 0 to 1 over the ramp interval.
+        path_time = (elapsed * elapsed) / (2.0 * ramp)
+        path_time_dot = elapsed / ramp
+        path_time_ddot = 1.0 / ramp
         return path_time, path_time_dot, path_time_ddot
 
     def sample_path(self, path_time_s: float) -> TrajectorySample:
