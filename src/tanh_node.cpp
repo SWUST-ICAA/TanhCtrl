@@ -590,10 +590,11 @@ void TanhNode::positionControlLoop(uint64_t sample_us) {
     updateHoldReference(state_.position_ned.z());
   }
 
+  const uint64_t now_us = nowMicros(*this->get_clock());
   handleMissionPreconditions();
-  updateMissionStateMachine(sample_us);
+  updateMissionStateMachine(now_us);
 
-  const TrajectoryRef* active_ref = selectActiveReference(sample_us);
+  const TrajectoryRef* active_ref = selectActiveReference(now_us);
   if (!active_ref || !active_ref->valid) {
     position_loop_command_ = AttitudeReference{};
     has_position_loop_command_ = false;
