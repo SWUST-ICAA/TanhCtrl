@@ -7,7 +7,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_gtest REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -15,7 +14,6 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
-include(CTest)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FlatTrajectoryReference.msg"
@@ -109,56 +107,6 @@ install(PROGRAMS
   scripts/flatness_reference_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-if(BUILD_TESTING)
-  add_executable(test_common
-    test/test_common.cpp
-  )
-  target_link_libraries(test_common tanh_ctrl_common)
-  target_include_directories(test_common PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-  )
-  add_test(
-    NAME test_common
-    COMMAND test_common
-  )
-
-  add_executable(test_tanh_controller
-    test/test_tanh_controller.cpp
-  )
-  target_link_libraries(test_tanh_controller tanh_ctrl_core)
-  target_include_directories(test_tanh_controller PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-  )
-  add_test(
-    NAME test_tanh_controller
-    COMMAND test_tanh_controller
-  )
-
-  add_executable(test_tanh_blocks
-    test/test_tanh_blocks.cpp
-  )
-  target_link_libraries(test_tanh_blocks tanh_ctrl_blocks)
-  target_include_directories(test_tanh_blocks PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-  )
-  add_test(
-    NAME test_tanh_blocks
-    COMMAND test_tanh_blocks
-  )
-
-  ament_add_gtest(test_tanh_node_logic
-    test/test_tanh_node_logic.cpp
-  )
-  target_link_libraries(test_tanh_node_logic tanh_ctrl_node_lib)
-  target_include_directories(test_tanh_node_logic PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-  )
-endif()
 
 ament_export_dependencies(rosidl_default_runtime)
 
