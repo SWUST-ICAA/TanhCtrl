@@ -1,40 +1,37 @@
 #pragma once
 
 #include <Eigen/Dense>
-
 #include <array>
 
 namespace tanh_ctrl {
 
-struct Vec3LowPass
-{
+struct Vec3LowPass {
   Eigen::Vector3d cutoff_hz{Eigen::Vector3d::Zero()};
   Eigen::Vector3d state{Eigen::Vector3d::Zero()};
   std::array<bool, 3> initialized{{false, false, false}};
 };
 
-struct Vec3RateEstimator
-{
+struct Vec3RateEstimator {
   Eigen::Vector3d last_value{Eigen::Vector3d::Zero()};
   bool has_last_value{false};
   Vec3LowPass filter{};
 };
 
 Eigen::Vector3d tanh_feedback(
-  const Eigen::Vector3d & error,
-  const Eigen::Vector3d & slope,
-  const Eigen::Vector3d & scale);
+    const Eigen::Vector3d& error,
+    const Eigen::Vector3d& slope,
+    const Eigen::Vector3d& scale);
 
-void reset_low_pass(Vec3LowPass & lpf);
+void reset_low_pass(Vec3LowPass& lpf);
 Eigen::Vector3d update_low_pass(
-  const Eigen::Vector3d & input,
-  double dt,
-  Vec3LowPass & lpf);
+    const Eigen::Vector3d& input,
+    double dt,
+    Vec3LowPass& lpf);
 
-void reset_rate_estimator(Vec3RateEstimator & estimator);
+void reset_rate_estimator(Vec3RateEstimator& estimator);
 Eigen::Vector3d update_rate_estimator(
-  const Eigen::Vector3d & value,
-  double dt,
-  Vec3RateEstimator & estimator);
+    const Eigen::Vector3d& value,
+    double dt,
+    Vec3RateEstimator& estimator);
 
 }  // namespace tanh_ctrl

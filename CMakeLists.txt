@@ -117,6 +117,23 @@ if(BUILD_TESTING)
     tanh_ctrl_core
     tanh_ctrl_common
   )
+
+  ament_add_gtest(test_tanh_node_mission_state
+    test/test_tanh_node_mission_state.cpp
+  )
+  target_link_libraries(test_tanh_node_mission_state
+    tanh_ctrl_node_lib
+  )
+
+  ament_add_gtest(test_tools
+    test/test_tools.cpp
+  )
+  target_link_libraries(test_tools
+    tanh_ctrl_common
+  )
+  ament_target_dependencies(test_tools
+    rclcpp
+  )
 endif()
 
 ament_export_dependencies(rosidl_default_runtime)

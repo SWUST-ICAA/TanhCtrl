@@ -5,15 +5,11 @@
 #include "tanh_ctrl/common.hpp"
 #include "tanh_ctrl/tanh_controller.hpp"
 
-namespace tanh_ctrl
-{
+namespace tanh_ctrl {
 
-namespace
-{
+namespace {
 
-void expectVecNear(
-  const Eigen::VectorXd & actual, const Eigen::VectorXd & expected, double tolerance)
-{
+void expectVecNear(const Eigen::VectorXd& actual, const Eigen::VectorXd& expected, double tolerance) {
   ASSERT_EQ(actual.size(), expected.size());
   for (Eigen::Index index = 0; index < actual.size(); ++index) {
     EXPECT_NEAR(actual(index), expected(index), tolerance);
@@ -22,8 +18,7 @@ void expectVecNear(
 
 }  // namespace
 
-TEST(ControlTiming, computesDtFromSampleTimestamp)
-{
+TEST(ControlTiming, computesDtFromSampleTimestamp) {
   uint64_t last_sample_us = 0;
 
   EXPECT_DOUBLE_EQ(computeLoopDtFromSample(1000, &last_sample_us), 1e-4);
@@ -43,22 +38,17 @@ TEST(ControlTiming, computesDtFromSampleTimestamp)
   EXPECT_EQ(selectMessageTimestampUs(0, 0, 150), 150u);
 }
 
-TEST(ControlTiming, estimatesLinearAccelerationFromVelocitySamples)
-{
+TEST(ControlTiming, estimatesLinearAccelerationFromVelocitySamples) {
   const Eigen::Vector3d current_velocity_ned(1.5, -0.5, 0.25);
   const Eigen::Vector3d previous_velocity_ned(0.9, -0.8, -0.15);
 
-  const Eigen::Vector3d accel_ned =
-    estimateLinearAccelerationNed(current_velocity_ned, previous_velocity_ned, 0.2);
+  const Eigen::Vector3d accel_ned = estimateLinearAccelerationNed(current_velocity_ned, previous_velocity_ned, 0.2);
   expectVecNear(accel_ned, Eigen::Vector3d(3.0, 1.5, 2.0), 1e-12);
 
-  expectVecNear(
-    estimateLinearAccelerationNed(current_velocity_ned, previous_velocity_ned, 0.0),
-    Eigen::Vector3d::Zero(), 1e-12);
+  expectVecNear(estimateLinearAccelerationNed(current_velocity_ned, previous_velocity_ned, 0.0), Eigen::Vector3d::Zero(), 1e-12);
 }
 
-TEST(TanhControllerSplit, splitLoopsMatchMonolithicCompute)
-{
+TEST(TanhControllerSplit, splitLoopsMatchMonolithicCompute) {
   TanhController monolithic_controller;
   TanhController split_controller;
 
@@ -66,10 +56,9 @@ TEST(TanhControllerSplit, splitLoopsMatchMonolithicCompute)
   state.position_ned = Eigen::Vector3d(1.2, -0.5, -2.1);
   state.velocity_ned = Eigen::Vector3d(0.3, -0.2, 0.1);
   state.linear_acceleration_ned = Eigen::Vector3d(0.2, -0.1, 9.7);
-  state.q_body_to_ned =
-    Eigen::AngleAxisd(0.2, Eigen::Vector3d::UnitZ()) *
-    Eigen::AngleAxisd(-0.1, Eigen::Vector3d::UnitY()) *
-    Eigen::AngleAxisd(0.05, Eigen::Vector3d::UnitX());
+  state.q_body_to_ned = Eigen::AngleAxisd(0.2, Eigen::Vector3d::UnitZ()) *
+                        Eigen::AngleAxisd(-0.1, Eigen::Vector3d::UnitY()) *
+                        Eigen::AngleAxisd(0.05, Eigen::Vector3d::UnitX());
   state.angular_velocity_body = Eigen::Vector3d(0.4, -0.3, 0.2);
 
   TrajectoryRef ref{};

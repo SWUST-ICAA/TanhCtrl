@@ -10,50 +10,41 @@ namespace tanh_ctrl {
 /**
  * @brief Tanh feedback controller for quadrotor position and attitude stabilization.
  */
-class TanhController
-{
-public:
+class TanhController {
+ public:
   TanhController();
 
   void setMass(double mass);
   void setGravity(double gravity);
-  void setPositionGains(const PositionGains & gains);
-  void setAttitudeGains(const AttitudeGains & gains);
-  void setInertia(const Eigen::Matrix3d & inertia);
-  void setAllocationParams(const AllocationParams & alloc);
+  void setPositionGains(const PositionGains& gains);
+  void setAttitudeGains(const AttitudeGains& gains);
+  void setInertia(const Eigen::Matrix3d& inertia);
+  void setAllocationParams(const AllocationParams& alloc);
   void setMotorForceMax(double max_force);
   void setThrustModelFactor(double thrust_model_factor);
 
-  const PositionGains & getPositionGains() const { return pos_gains_; }
-  const AllocationParams & getAllocationParams() const { return alloc_; }
+  const PositionGains& getPositionGains() const { return pos_gains_; }
+  const AllocationParams& getAllocationParams() const { return alloc_; }
 
   void setMaxTilt(double max_tilt_rad);
-  void setLinearAccelerationLowPassHz(const Eigen::Vector3d & cutoff_hz);
+  void setLinearAccelerationLowPassHz(const Eigen::Vector3d& cutoff_hz);
   void setAngularAccelerationLowPassHz(double cutoff_hz);
   void setVelocityDisturbanceLowPassHz(double cutoff_hz);
   void setAngularVelocityDisturbanceLowPassHz(double cutoff_hz);
 
   void reset();
 
-  bool compute(const VehicleState & state, const TrajectoryRef & ref, double dt, ControlOutput * out);
-  bool computePositionLoop(
-    const VehicleState & state, const TrajectoryRef & ref, double dt,
-    AttitudeReference * attitude_reference);
-  bool computeAttitudeLoop(
-    const VehicleState & state, const AttitudeReference & attitude_reference, double dt,
-    ControlOutput * out);
+  bool compute(const VehicleState& state, const TrajectoryRef& ref, double dt, ControlOutput* out);
+  bool computePositionLoop(const VehicleState& state, const TrajectoryRef& ref, double dt, AttitudeReference* attitude_reference);
+  bool computeAttitudeLoop(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, ControlOutput* out);
 
-private:
+ private:
   static double sanitizeCutoff(double cutoff_hz);
-  static Eigen::Vector3d sanitizeCutoff(const Eigen::Vector3d & cutoff_hz);
-  void initializeLoopState(const VehicleState & state);
+  static Eigen::Vector3d sanitizeCutoff(const Eigen::Vector3d& cutoff_hz);
+  void initializeLoopState(const VehicleState& state);
 
-  void computePosition(
-    const VehicleState & state, const TrajectoryRef & ref, double dt,
-    Eigen::Vector3d * thrust_vec_ned, double * thrust_norm);
-  void computeAttitude(
-    const VehicleState & state, const AttitudeReference & attitude_reference, double dt,
-    Eigen::Vector3d * torque_body);
+  void computePosition(const VehicleState& state, const TrajectoryRef& ref, double dt, Eigen::Vector3d* thrust_vec_ned, double* thrust_norm);
+  void computeAttitude(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, Eigen::Vector3d* torque_body);
 
   double mass_{1.0};
   double gravity_{9.81};

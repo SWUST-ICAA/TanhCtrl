@@ -2,24 +2,20 @@
 
 #include <cmath>
 
-namespace tanh_ctrl
-{
+namespace tanh_ctrl {
 
-namespace
-{
+namespace {
 
-double sanitize_cutoff(double cutoff_hz)
-{
+double sanitize_cutoff(double cutoff_hz) {
   return (std::isfinite(cutoff_hz) && cutoff_hz > 0.0) ? cutoff_hz : 0.0;
 }
 
 double update_scalar_low_pass(
-  double input,
-  double cutoff_hz,
-  double dt,
-  double * state,
-  bool * initialized)
-{
+    double input,
+    double cutoff_hz,
+    double dt,
+    double* state,
+    bool* initialized) {
   if (!state || !initialized) {
     return input;
   }
@@ -49,46 +45,41 @@ double update_scalar_low_pass(
 }  // namespace
 
 Eigen::Vector3d tanh_feedback(
-  const Eigen::Vector3d & error,
-  const Eigen::Vector3d & slope,
-  const Eigen::Vector3d & scale)
-{
+    const Eigen::Vector3d& error,
+    const Eigen::Vector3d& slope,
+    const Eigen::Vector3d& scale) {
   return scale.cwiseProduct((slope.cwiseProduct(error)).array().tanh().matrix());
 }
 
-void reset_low_pass(Vec3LowPass & lpf)
-{
+void reset_low_pass(Vec3LowPass& lpf) {
   lpf.state.setZero();
   lpf.initialized = {{false, false, false}};
 }
 
 Eigen::Vector3d update_low_pass(
-  const Eigen::Vector3d & input,
-  double dt,
-  Vec3LowPass & lpf)
-{
+    const Eigen::Vector3d& input,
+    double dt,
+    Vec3LowPass& lpf) {
   Eigen::Vector3d output;
   output.x() = update_scalar_low_pass(
-    input.x(), lpf.cutoff_hz.x(), dt, &lpf.state.x(), &lpf.initialized[0]);
+      input.x(), lpf.cutoff_hz.x(), dt, &lpf.state.x(), &lpf.initialized[0]);
   output.y() = update_scalar_low_pass(
-    input.y(), lpf.cutoff_hz.y(), dt, &lpf.state.y(), &lpf.initialized[1]);
+      input.y(), lpf.cutoff_hz.y(), dt, &lpf.state.y(), &lpf.initialized[1]);
   output.z() = update_scalar_low_pass(
-    input.z(), lpf.cutoff_hz.z(), dt, &lpf.state.z(), &lpf.initialized[2]);
+      input.z(), lpf.cutoff_hz.z(), dt, &lpf.state.z(), &lpf.initialized[2]);
   return output;
 }
 
-void reset_rate_estimator(Vec3RateEstimator & estimator)
-{
+void reset_rate_estimator(Vec3RateEstimator& estimator) {
   estimator.last_value.setZero();
   estimator.has_last_value = false;
   reset_low_pass(estimator.filter);
 }
 
 Eigen::Vector3d update_rate_estimator(
-  const Eigen::Vector3d & value,
-  double dt,
-  Vec3RateEstimator & estimator)
-{
+    const Eigen::Vector3d& value,
+    double dt,
+    Vec3RateEstimator& estimator) {
   if (!(dt > 0.0) || !std::isfinite(dt)) {
     return Eigen::Vector3d::Zero();
   }

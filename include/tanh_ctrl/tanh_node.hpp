@@ -1,11 +1,6 @@
 #pragma once
 
-#include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/bool.hpp>
-
 #include <array>
-#include <string>
-
 #include <px4_msgs/msg/actuator_motors.hpp>
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/vehicle_angular_velocity.hpp>
@@ -14,15 +9,16 @@
 #include <px4_msgs/msg/vehicle_odometry.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/vehicle_thrust_setpoint.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <string>
 
 #include "tanh_ctrl/msg/flat_trajectory_reference.hpp"
 #include "tanh_ctrl/tanh_controller.hpp"
 
-namespace tanh_ctrl
-{
+namespace tanh_ctrl {
 
-enum class MissionState
-{
+enum MissionState {
   WAIT_FOR_OFFBOARD,
   WAIT_FOR_ARMING,
   TAKEOFF,
@@ -30,47 +26,22 @@ enum class MissionState
   TRACKING,
 };
 
-const char * toString(MissionState state);
+bool referenceMessageHasValidPosition(const msg::FlatTrajectoryReference& msg);
 
-MissionState nextMissionState(MissionState current, bool is_offboard, bool is_armed,
-                              bool takeoff_complete, bool reference_fresh);
-
-bool shouldPublishStartTrackingSignal(MissionState state, bool takeoff_complete,
-                                      bool already_sent);
-
-bool referenceMessageHasValidPosition(const msg::FlatTrajectoryReference & msg);
-
-TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference & msg,
+TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg,
                                          uint64_t timestamp_us);
 
-TrajectoryRef makeHoldReference(const VehicleState & state, double target_z_ned, double yaw);
+TrajectoryRef makeHoldReference(const VehicleState& state, double target_z_ned, double yaw);
 
-bool hasFreshExternalReference(const TrajectoryRef & external_ref, uint64_t now_us,
+bool hasFreshExternalReference(const TrajectoryRef& external_ref, uint64_t now_us,
                                uint64_t last_reference_receive_us, double timeout_s);
 
-class TanhNode : public rclcpp::Node
-{
-public:
-  explicit TanhNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+class TanhNode : public rclcpp::Node {
+ public:
+  explicit TanhNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
-  const std::string & vehicleAttitudeTopic() const { return topic_vehicle_attitude_; }
-  const std::string & vehicleAngularVelocityTopic() const
-  {
-    return topic_vehicle_angular_velocity_;
-  }
-  const std::string & vehicleOdometryTopic() const { return topic_vehicle_odometry_; }
-  const std::string & vehicleStatusV1Topic() const { return topic_vehicle_status_v1_; }
-  const std::string & referenceTopic() const { return topic_reference_; }
-  const std::string & actuatorMotorsTopic() const { return topic_actuator_motors_; }
-  const std::string & offboardControlModeTopic() const { return topic_offboard_control_mode_; }
-  const std::string & vehicleCommandTopic() const { return topic_vehicle_command_; }
-  const std::string & vehicleThrustSetpointTopic() const
-  {
-    return topic_vehicle_thrust_setpoint_;
-  }
   bool publishOffboardControlModeEnabled() const { return publish_offboard_control_mode_; }
-  bool publishVehicleThrustSetpointEnabled() const
-  {
+  bool publishVehicleThrustSetpointEnabled() const {
     return publish_vehicle_thrust_setpoint_;
   }
   bool autoOffboardEnabled() const { return enable_auto_offboard_; }
@@ -78,20 +49,13 @@ public:
   int offboardWarmupSetpointCount() const { return offboard_setpoint_warmup_; }
   double motorForceMax() const { return motor_force_max_; }
   double thrustModelFactor() const { return thrust_model_factor_; }
-  const PositionGains & positionGains() const { return controller_.getPositionGains(); }
+  const PositionGains& positionGains() const { return controller_.getPositionGains(); }
   std::array<int, 4> motorOutputMap() const { return motor_output_map_; }
   double allocationBeta() const { return controller_.getAllocationParams().beta; }
 
-private:
+ private:
   void declareParameters();
   void loadParams();
-  void loadGeneralParams();
-  void loadModelParams();
-  void loadPositionParams();
-  void loadAttitudeParams();
-  void loadFilterParams();
-  void loadAllocationParams();
-  void loadMotorOutputMap();
   void createRosInterfaces();
 
   void odomCallback(const px4_msgs::msg::VehicleOdometry::SharedPtr msg);
@@ -105,21 +69,19 @@ private:
   void publishVehicleCommand(uint32_t command, float param1, float param2, float param3);
   void publishStartTrackingSignal(bool enabled);
   void publishOffboardControlMode(uint64_t now_us);
-  void publishMotorCommands(const ControlOutput & out, uint64_t now_us);
-  void publishThrustSetpoint(const ControlOutput & out, uint64_t now_us);
+  void publishMotorCommands(const ControlOutput& out, uint64_t now_us);
+  void publishThrustSetpoint(const ControlOutput& out, uint64_t now_us);
 
   void updateHoldReference(double target_z_ned);
   void updateCurrentHoldReference();
   void resetMissionProgress();
-  void transitionToWaitState(MissionState next_state, const char * reason);
   void publishStartTrackingOnce();
   void resetTakeoffProgress();
   bool takeoffHoldComplete(uint64_t now_us);
   void handleMissionPreconditions();
   void maybeSendAutomaticRequests(uint64_t now_us);
   void updateMissionStateMachine(uint64_t now_us);
-  const TrajectoryRef * selectActiveReference(uint64_t now_us) const;
-  void setMissionState(MissionState next_state, const char * reason);
+  const TrajectoryRef* selectActiveReference(uint64_t now_us) const;
 
   rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<px4_msgs::msg::VehicleAttitude>::SharedPtr attitude_sub_;
@@ -155,7 +117,7 @@ private:
   double current_yaw_{0.0};
   Eigen::Vector3d last_odometry_velocity_ned_{Eigen::Vector3d::Zero()};
   bool has_last_odometry_velocity_{false};
-  MissionState mission_state_{MissionState::WAIT_FOR_OFFBOARD};
+  MissionState mission_state_{WAIT_FOR_OFFBOARD};
   bool takeoff_reached_{false};
   uint64_t takeoff_reached_since_us_{0};
   bool start_tracking_sent_{false};
@@ -163,17 +125,6 @@ private:
   uint64_t last_arm_request_us_{0};
 
   TanhController controller_{};
-
-  std::string topic_vehicle_attitude_;
-  std::string topic_vehicle_angular_velocity_;
-  std::string topic_vehicle_odometry_;
-  std::string topic_reference_;
-  std::string topic_actuator_motors_;
-  std::string topic_offboard_control_mode_;
-  std::string topic_vehicle_command_;
-  std::string topic_vehicle_thrust_setpoint_;
-  std::string topic_start_tracking_;
-  std::string topic_vehicle_status_v1_;
 
   bool publish_offboard_control_mode_{true};
   bool publish_vehicle_thrust_setpoint_{true};
@@ -192,4 +143,4 @@ private:
   double mission_request_interval_s_{1.0};
 };
 
-} // namespace tanh_ctrl
+}  // namespace tanh_ctrl
