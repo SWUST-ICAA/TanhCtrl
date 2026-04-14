@@ -35,15 +35,12 @@ bool isFiniteVec3(const Array3T& values) {
 
 template <typename Array4T>
 bool isFiniteQuat(const Array4T& values) {
-  return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]) &&
-         std::isfinite(values[3]);
+  return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]) && std::isfinite(values[3]);
 }
 
 template <typename Array3T>
 Eigen::Vector3d eigenFromArray3OrZero(const Array3T& values) {
-  return Eigen::Vector3d(std::isfinite(values[0]) ? static_cast<double>(values[0]) : 0.0,
-                         std::isfinite(values[1]) ? static_cast<double>(values[1]) : 0.0,
-                         std::isfinite(values[2]) ? static_cast<double>(values[2]) : 0.0);
+  return Eigen::Vector3d(std::isfinite(values[0]) ? static_cast<double>(values[0]) : 0.0, std::isfinite(values[1]) ? static_cast<double>(values[1]) : 0.0, std::isfinite(values[2]) ? static_cast<double>(values[2]) : 0.0);
 }
 
 template <typename MsgVec3T>
@@ -53,17 +50,14 @@ bool isFiniteXyz(const MsgVec3T& values) {
 
 template <typename MsgVec3T>
 Eigen::Vector3d eigenFromXyzOrZero(const MsgVec3T& values) {
-  return Eigen::Vector3d(std::isfinite(values.x) ? static_cast<double>(values.x) : 0.0,
-                         std::isfinite(values.y) ? static_cast<double>(values.y) : 0.0,
-                         std::isfinite(values.z) ? static_cast<double>(values.z) : 0.0);
+  return Eigen::Vector3d(std::isfinite(values.x) ? static_cast<double>(values.x) : 0.0, std::isfinite(values.y) ? static_cast<double>(values.y) : 0.0, std::isfinite(values.z) ? static_cast<double>(values.z) : 0.0);
 }
 
 inline bool requestDue(uint64_t now_us, uint64_t last_request_us, double interval_s) {
   return last_request_us == 0 || elapsedSeconds(now_us, last_request_us) >= interval_s;
 }
 
-inline void declareAxisPair(rclcpp::Node& node, const char* shared_name, double shared_default,
-                            const char* axial_name, double axial_default) {
+inline void declareAxisPair(rclcpp::Node& node, const char* shared_name, double shared_default, const char* axial_name, double axial_default) {
   node.declare_parameter<double>(shared_name, shared_default);
   node.declare_parameter<double>(axial_name, axial_default);
 }

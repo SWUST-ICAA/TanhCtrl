@@ -28,13 +28,11 @@ enum MissionState {
 
 bool referenceMessageHasValidPosition(const msg::FlatTrajectoryReference& msg);
 
-TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg,
-                                         uint64_t timestamp_us);
+TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg, uint64_t timestamp_us);
 
 TrajectoryRef makeHoldReference(const VehicleState& state, double target_z_ned, double yaw);
 
-bool hasFreshExternalReference(const TrajectoryRef& external_ref, uint64_t now_us,
-                               uint64_t last_reference_receive_us, double timeout_s);
+bool hasFreshExternalReference(const TrajectoryRef& external_ref, uint64_t now_us, uint64_t last_reference_receive_us, double timeout_s);
 
 class TanhNode : public rclcpp::Node {
  public:

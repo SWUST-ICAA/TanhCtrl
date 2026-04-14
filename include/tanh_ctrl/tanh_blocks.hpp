@@ -17,21 +17,12 @@ struct Vec3RateEstimator {
   Vec3LowPass filter{};
 };
 
-Eigen::Vector3d tanh_feedback(
-    const Eigen::Vector3d& error,
-    const Eigen::Vector3d& slope,
-    const Eigen::Vector3d& scale);
+Eigen::Vector3d tanh_feedback(const Eigen::Vector3d& error, const Eigen::Vector3d& slope, const Eigen::Vector3d& scale);
 
 void reset_low_pass(Vec3LowPass& lpf);
-Eigen::Vector3d update_low_pass(
-    const Eigen::Vector3d& input,
-    double dt,
-    Vec3LowPass& lpf);
+Eigen::Vector3d update_low_pass(const Eigen::Vector3d& input, double dt, Vec3LowPass& lpf);
 
 void reset_rate_estimator(Vec3RateEstimator& estimator);
-Eigen::Vector3d update_rate_estimator(
-    const Eigen::Vector3d& value,
-    double dt,
-    Vec3RateEstimator& estimator);
+Eigen::Vector3d update_rate_estimator(const Eigen::Vector3d& value, double dt, Vec3RateEstimator& estimator);
 
 }  // namespace tanh_ctrl
