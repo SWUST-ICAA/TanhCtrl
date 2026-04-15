@@ -28,7 +28,7 @@ tanh_ctrl:
         K_P: 1.0
         M_V: 6.0
         K_V: 1.0
-        K_Acceleration: 1.2
+        K_Acceleration: 1.5
         observer:
           P_V: 1.5
           L_V: 1.5
@@ -39,7 +39,7 @@ tanh_ctrl:
         K_V: 0.5
         K_Acceleration: 1.0
         observer:
-          P_V: 2.5
+          P_V: 2.6
           L_V: 2.5
       max_tilt_deg: 35.0
 
@@ -54,8 +54,8 @@ tanh_ctrl:
           P_AngularVelocity: 1.5
           L_AngularVelocity: 0.4
       yaw:
-        M_Angle: 2.0
-        K_Angle: 3.0
+        M_Angle: 1.0
+        K_Angle: 6.0
         M_AngularVelocity: 8.0
         K_AngularVelocity: 3.0
         K_AngularAcceleration: 1.0
