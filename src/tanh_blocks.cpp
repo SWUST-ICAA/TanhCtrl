@@ -56,31 +56,4 @@ Eigen::Vector3d update_low_pass(const Eigen::Vector3d& input, double dt, Vec3Low
   return output;
 }
 
-void reset_rate_estimator(Vec3RateEstimator& estimator) {
-  estimator.last_value.setZero();
-  estimator.has_last_value = false;
-  reset_low_pass(estimator.filter);
-}
-
-Eigen::Vector3d update_rate_estimator(const Eigen::Vector3d& value, double dt, Vec3RateEstimator& estimator) {
-  if (!(dt > 0.0) || !std::isfinite(dt)) {
-    return Eigen::Vector3d::Zero();
-  }
-
-  if (!estimator.has_last_value) {
-    estimator.last_value = value;
-    estimator.has_last_value = true;
-    return Eigen::Vector3d::Zero();
-  }
-
-  Eigen::Vector3d rate = (value - estimator.last_value) / dt;
-  estimator.last_value = value;
-
-  if (!rate.allFinite()) {
-    rate.setZero();
-  }
-
-  return update_low_pass(rate, dt, estimator.filter);
-}
-
 }  // namespace tanh_ctrl

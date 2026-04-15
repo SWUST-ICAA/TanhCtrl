@@ -18,6 +18,7 @@ struct VehicleState {
   Eigen::Vector3d linear_acceleration_ned{Eigen::Vector3d::Zero()};  ///< Linear acceleration in NED [m/s^2].
   Eigen::Quaterniond q_body_to_ned{Eigen::Quaterniond::Identity()};  ///< Attitude from body FRD to NED.
   Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};    ///< Angular velocity in body FRD [rad/s].
+  Eigen::Vector3d angular_acceleration_body{Eigen::Vector3d::Zero()};  ///< Angular acceleration in body FRD [rad/s^2].
 };
 
 /**

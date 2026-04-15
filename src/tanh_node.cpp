@@ -110,7 +110,6 @@ void TanhNode::declareParameters() {
 
   this->declare_parameter<double>("filters.linear.horizontal_cutoff_hz", std::numeric_limits<double>::quiet_NaN());
   this->declare_parameter<double>("filters.linear.vertical_cutoff_hz", std::numeric_limits<double>::quiet_NaN());
-  this->declare_parameter<double>("filters.angular_accel_cutoff_hz", 0.0);
   this->declare_parameter<double>("filters.velocity_disturbance_cutoff_hz", 0.0);
   this->declare_parameter<double>("filters.angular_velocity_disturbance_cutoff_hz", 0.0);
 
@@ -194,7 +193,6 @@ void TanhNode::loadParams() {
   const double vertical_cutoff = std::isfinite(linear_vertical_cutoff) ? linear_vertical_cutoff : horizontal_cutoff;
 
   controller_.setLinearAccelerationLowPassHz(Eigen::Vector3d(horizontal_cutoff, horizontal_cutoff, vertical_cutoff));
-  controller_.setAngularAccelerationLowPassHz(this->get_parameter("filters.angular_accel_cutoff_hz").as_double());
   controller_.setVelocityDisturbanceLowPassHz(this->get_parameter("filters.velocity_disturbance_cutoff_hz").as_double());
   controller_.setAngularVelocityDisturbanceLowPassHz(this->get_parameter("filters.angular_velocity_disturbance_cutoff_hz").as_double());
 
@@ -280,6 +278,7 @@ void TanhNode::angularVelocityCallback(const px4_msgs::msg::VehicleAngularVeloci
   }
 
   state_.angular_velocity_body = eigenFromArray3OrZero(msg->xyz);
+  state_.angular_acceleration_body = eigenFromArray3OrZero(msg->xyz_derivative);
   has_angular_velocity_state_ = true;
 
   const uint64_t sample_us = selectMessageTimestampUs(msg->timestamp_sample, msg->timestamp, nowMicros(*this->get_clock()));

@@ -67,6 +67,5 @@ tanh_ctrl:
       linear:
         horizontal_cutoff_hz: 10.0
         vertical_cutoff_hz: 5.0
-      angular_accel_cutoff_hz: 20.0
       velocity_disturbance_cutoff_hz: 5.0
       angular_velocity_disturbance_cutoff_hz: 5.0

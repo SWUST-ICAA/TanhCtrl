@@ -66,11 +66,6 @@ void TanhController::setLinearAccelerationLowPassHz(const Eigen::Vector3d& cutof
   reset_low_pass(linear_accel_lpf_);
 }
 
-void TanhController::setAngularAccelerationLowPassHz(double cutoff_hz) {
-  angular_accel_estimator_.filter.cutoff_hz = Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
-  reset_rate_estimator(angular_accel_estimator_);
-}
-
 void TanhController::setVelocityDisturbanceLowPassHz(double cutoff_hz) {
   velocity_disturbance_lpf_.cutoff_hz = Eigen::Vector3d::Constant(sanitizeCutoff(cutoff_hz));
   reset_low_pass(velocity_disturbance_lpf_);
@@ -87,20 +82,17 @@ void TanhController::reset() {
   first_run_ = true;
 
   reset_low_pass(linear_accel_lpf_);
-  reset_rate_estimator(angular_accel_estimator_);
   reset_low_pass(velocity_disturbance_lpf_);
   reset_low_pass(angular_velocity_disturbance_lpf_);
 }
 
-void TanhController::initializeLoopState(const VehicleState& state) {
+void TanhController::initializeLoopState(const VehicleState&) {
   if (!first_run_) {
     return;
   }
 
   velocity_error_hat_ned_.setZero();
   angular_velocity_error_hat_body_.setZero();
-  angular_accel_estimator_.last_value = state.angular_velocity_body;
-  angular_accel_estimator_.has_last_value = true;
   first_run_ = false;
 }
 
@@ -199,7 +191,7 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Vector3d desired_angular_velocity_body = attitude_reference.has_angular_velocity_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_velocity_body) : Eigen::Vector3d::Zero();
   const Eigen::Vector3d desired_angular_acceleration_body = Eigen::Vector3d::Zero();
 
-  Eigen::Vector3d angular_acceleration_body = update_rate_estimator(state.angular_velocity_body, dt, angular_accel_estimator_);
+  Eigen::Vector3d angular_acceleration_body = state.angular_acceleration_body;
   if (!angular_acceleration_body.allFinite()) {
     angular_acceleration_body.setZero();
   }
