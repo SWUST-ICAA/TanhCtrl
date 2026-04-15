@@ -26,9 +26,7 @@ enum MissionState {
   TRACKING,
 };
 
-bool referenceMessageHasValidPosition(const msg::FlatTrajectoryReference& msg);
-
-TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg, uint64_t timestamp_us);
+TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg);
 
 TrajectoryRef makeHoldReference(const VehicleState& state, double target_z_ned, double yaw);
 
@@ -87,7 +85,6 @@ class TanhNode : public rclcpp::Node {
   TrajectoryRef external_ref_{};
   TrajectoryRef hold_ref_{};
   AttitudeReference position_loop_command_{};
-  bool has_external_ref_{false};
   bool has_hold_ref_{false};
   bool has_position_loop_command_{false};
   uint64_t last_position_loop_us_{0};
@@ -112,7 +109,6 @@ class TanhNode : public rclcpp::Node {
   bool publish_vehicle_thrust_setpoint_{true};
   double motor_force_max_{8.54858};
   double thrust_model_factor_{1.0};
-  double gravity_ned_{9.81};
   std::array<int, 4> motor_output_map_{{1, 3, 0, 2}};
   bool enable_auto_offboard_{true};
   bool enable_auto_arm_{false};

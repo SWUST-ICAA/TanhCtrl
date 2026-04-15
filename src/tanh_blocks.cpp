@@ -6,21 +6,16 @@ namespace tanh_ctrl {
 
 namespace {
 
-double sanitize_cutoff(double cutoff_hz) {
-  return (std::isfinite(cutoff_hz) && cutoff_hz > 0.0) ? cutoff_hz : 0.0;
-}
-
 double update_scalar_low_pass(double input, double cutoff_hz, double dt, double* state, bool* initialized) {
   if (!state || !initialized) {
     return input;
   }
 
-  if (!(dt > 0.0) || !std::isfinite(dt)) {
+  if (dt <= 0.0) {
     return input;
   }
 
-  cutoff_hz = sanitize_cutoff(cutoff_hz);
-  if (!(cutoff_hz > 0.0)) {
+  if (cutoff_hz <= 0.0) {
     return input;
   }
 

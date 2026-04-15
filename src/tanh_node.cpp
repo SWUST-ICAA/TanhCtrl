@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -24,26 +23,39 @@ constexpr int kOffboardWarmup = 10;
 constexpr double kAllocationBeta = 0.78539816339;
 constexpr std::array<int, 4> kMotorOutputMap{{1, 3, 0, 2}};
 
-}  // namespace
-
-bool referenceMessageHasValidPosition(const msg::FlatTrajectoryReference& msg) {
-  return isFiniteXyz(msg.position_ned);
-}
-
-TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg, uint64_t /*timestamp_us*/) {
-  TrajectoryRef ref{};
-  if (!referenceMessageHasValidPosition(msg)) {
-    return ref;
+const char* missionStateName(MissionState state) {
+  switch (state) {
+    case WAIT_FOR_OFFBOARD:
+      return "WAIT_FOR_OFFBOARD";
+    case WAIT_FOR_ARMING:
+      return "WAIT_FOR_ARMING";
+    case TAKEOFF:
+      return "TAKEOFF";
+    case HOLD:
+      return "HOLD";
+    case TRACKING:
+      return "TRACKING";
   }
 
-  ref.position_ned = eigenFromXyzOrZero(msg.position_ned);
-  ref.velocity_ned = eigenFromXyzOrZero(msg.velocity_ned);
-  ref.acceleration_ned = eigenFromXyzOrZero(msg.acceleration_ned);
-  ref.angular_velocity_body = eigenFromXyzOrZero(msg.body_rates_frd);
-  ref.has_angular_velocity_feedforward = isFiniteXyz(msg.body_rates_frd);
-  ref.torque_body = eigenFromXyzOrZero(msg.body_torque_frd);
-  ref.has_torque_feedforward = isFiniteXyz(msg.body_torque_frd);
-  ref.yaw = sanitizeScalar(msg.yaw);
+  return "UNKNOWN";
+}
+
+void logMissionTransition(rclcpp::Logger logger, MissionState from, MissionState to, const char* reason) {
+  RCLCPP_INFO(logger, "Mission state: %s -> %s (%s)", missionStateName(from), missionStateName(to), reason);
+}
+
+}  // namespace
+
+TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg) {
+  TrajectoryRef ref{};
+  ref.position_ned = eigenFromXyz(msg.position_ned);
+  ref.velocity_ned = eigenFromXyz(msg.velocity_ned);
+  ref.acceleration_ned = eigenFromXyz(msg.acceleration_ned);
+  ref.angular_velocity_body = eigenFromXyz(msg.body_rates_frd);
+  ref.has_angular_velocity_feedforward = true;
+  ref.torque_body = eigenFromXyz(msg.body_torque_frd);
+  ref.has_torque_feedforward = true;
+  ref.yaw = msg.yaw;
   ref.valid = true;
   return ref;
 }
@@ -108,8 +120,8 @@ void TanhNode::declareParameters() {
   declareAxisPair(*this, "attitude.tilt.observer.P_AngularVelocity", 0.0, "attitude.yaw.observer.P_AngularVelocity", 0.0);
   declareAxisPair(*this, "attitude.tilt.observer.L_AngularVelocity", 5.0, "attitude.yaw.observer.L_AngularVelocity", 5.0);
 
-  this->declare_parameter<double>("filters.linear.horizontal_cutoff_hz", std::numeric_limits<double>::quiet_NaN());
-  this->declare_parameter<double>("filters.linear.vertical_cutoff_hz", std::numeric_limits<double>::quiet_NaN());
+  this->declare_parameter<double>("filters.linear.horizontal_cutoff_hz", 0.0);
+  this->declare_parameter<double>("filters.linear.vertical_cutoff_hz", 0.0);
   this->declare_parameter<double>("filters.velocity_disturbance_cutoff_hz", 0.0);
   this->declare_parameter<double>("filters.angular_velocity_disturbance_cutoff_hz", 0.0);
 
@@ -149,8 +161,7 @@ void TanhNode::loadParams() {
   mission_request_interval_s_ = std::max(kMinRequestIntervalS, this->get_parameter("mission.request_interval_s").as_double());
 
   controller_.setMass(this->get_parameter("model.mass").as_double());
-  gravity_ned_ = this->get_parameter("model.gravity").as_double();
-  controller_.setGravity(gravity_ned_);
+  controller_.setGravity(this->get_parameter("model.gravity").as_double());
 
   const auto inertia_diag = this->get_parameter("model.inertia_diag").as_double_array();
   if (inertia_diag.size() != 3) {
@@ -187,11 +198,8 @@ void TanhNode::loadParams() {
   attitude_gains.L_AngularVelocity = loadAxisPairParam(*this, "attitude.tilt.observer.L_AngularVelocity", "attitude.yaw.observer.L_AngularVelocity");
   controller_.setAttitudeGains(attitude_gains);
 
-  const double linear_horizontal_cutoff = this->get_parameter("filters.linear.horizontal_cutoff_hz").as_double();
-  const double linear_vertical_cutoff = this->get_parameter("filters.linear.vertical_cutoff_hz").as_double();
-  const double horizontal_cutoff = std::isfinite(linear_horizontal_cutoff) ? linear_horizontal_cutoff : 0.0;
-  const double vertical_cutoff = std::isfinite(linear_vertical_cutoff) ? linear_vertical_cutoff : horizontal_cutoff;
-
+  const double horizontal_cutoff = this->get_parameter("filters.linear.horizontal_cutoff_hz").as_double();
+  const double vertical_cutoff = this->get_parameter("filters.linear.vertical_cutoff_hz").as_double();
   controller_.setLinearAccelerationLowPassHz(Eigen::Vector3d(horizontal_cutoff, horizontal_cutoff, vertical_cutoff));
   controller_.setVelocityDisturbanceLowPassHz(this->get_parameter("filters.velocity_disturbance_cutoff_hz").as_double());
   controller_.setAngularVelocityDisturbanceLowPassHz(this->get_parameter("filters.angular_velocity_disturbance_cutoff_hz").as_double());
@@ -209,42 +217,25 @@ void TanhNode::loadParams() {
   motor_output_map_ = kMotorOutputMap;
 }
 
-void TanhNode::publishOffboardControlMode(uint64_t now_us) {
-  if (!publish_offboard_control_mode_ || !offboard_mode_pub_) {
-    return;
-  }
-
-  px4_msgs::msg::OffboardControlMode mode{};
-  mode.timestamp = now_us;
-  mode.position = false;
-  mode.velocity = false;
-  mode.acceleration = false;
-  mode.attitude = false;
-  mode.body_rate = false;
-  mode.thrust_and_torque = false;
-  mode.direct_actuator = true;
-  offboard_mode_pub_->publish(mode);
-}
-
 void TanhNode::localPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {
   if (!msg) {
     return;
   }
 
-  if (!msg->xy_valid || !msg->z_valid || !std::isfinite(msg->x) || !std::isfinite(msg->y) || !std::isfinite(msg->z)) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_local_position contains invalid position data; waiting for estimator readiness.");
+  if (!msg->xy_valid || !msg->z_valid) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_local_position is missing valid position data; waiting for estimator readiness.");
     return;
   }
 
-  if (!msg->v_xy_valid || !msg->v_z_valid || !std::isfinite(msg->vx) || !std::isfinite(msg->vy) || !std::isfinite(msg->vz)) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_local_position contains invalid velocity data; waiting for estimator readiness.");
+  if (!msg->v_xy_valid || !msg->v_z_valid) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_local_position is missing valid velocity data; waiting for estimator readiness.");
     return;
   }
 
   const uint64_t sample_us = selectMessageTimestampUs(msg->timestamp_sample, msg->timestamp, nowMicros(*this->get_clock()));
   state_.position_ned = Eigen::Vector3d(msg->x, msg->y, msg->z);
   state_.velocity_ned = Eigen::Vector3d(msg->vx, msg->vy, msg->vz);
-  state_.linear_acceleration_ned = std::isfinite(msg->ax) && std::isfinite(msg->ay) && std::isfinite(msg->az) ? Eigen::Vector3d(msg->ax, msg->ay, msg->az) : Eigen::Vector3d::Zero();
+  state_.linear_acceleration_ned = Eigen::Vector3d(msg->ax, msg->ay, msg->az);
 
   has_position_state_ = true;
   positionControlLoop(sample_us);
@@ -252,11 +243,6 @@ void TanhNode::localPositionCallback(const px4_msgs::msg::VehicleLocalPosition::
 
 void TanhNode::attitudeCallback(const px4_msgs::msg::VehicleAttitude::SharedPtr msg) {
   if (!msg) {
-    return;
-  }
-
-  if (!isFiniteQuat(msg->q)) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_attitude contains an invalid quaternion (q is NaN); waiting for estimator readiness.");
     return;
   }
 
@@ -272,13 +258,8 @@ void TanhNode::angularVelocityCallback(const px4_msgs::msg::VehicleAngularVeloci
     return;
   }
 
-  if (!isFiniteVec3(msg->xyz)) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "vehicle_angular_velocity contains invalid angular velocity data (xyz is NaN); waiting for estimator readiness.");
-    return;
-  }
-
-  state_.angular_velocity_body = eigenFromArray3OrZero(msg->xyz);
-  state_.angular_acceleration_body = eigenFromArray3OrZero(msg->xyz_derivative);
+  state_.angular_velocity_body = eigenFromArray3(msg->xyz);
+  state_.angular_acceleration_body = eigenFromArray3(msg->xyz_derivative);
   has_angular_velocity_state_ = true;
 
   const uint64_t sample_us = selectMessageTimestampUs(msg->timestamp_sample, msg->timestamp, nowMicros(*this->get_clock()));
@@ -312,272 +293,9 @@ void TanhNode::referenceCallback(const msg::FlatTrajectoryReference::SharedPtr m
     return;
   }
 
-  if (!referenceMessageHasValidPosition(*msg)) {
-    external_ref_ = TrajectoryRef{};
-    external_ref_.valid = false;
-    has_external_ref_ = false;
-    return;
-  }
-
   const uint64_t now_us = nowMicros(*this->get_clock());
-  external_ref_ = trajectoryReferenceFromMsg(*msg, now_us);
+  external_ref_ = trajectoryReferenceFromMsg(*msg);
   last_reference_receive_us_ = now_us;
-  has_external_ref_ = external_ref_.valid;
-}
-
-void TanhNode::publishVehicleCommand(uint32_t command, float param1, float param2, float param3) {
-  if (!vehicle_command_pub_) {
-    return;
-  }
-
-  px4_msgs::msg::VehicleCommand cmd{};
-  cmd.timestamp = nowMicros(*this->get_clock());
-  cmd.param1 = param1;
-  cmd.param2 = param2;
-  cmd.param3 = param3;
-  cmd.command = command;
-  cmd.target_system = 1;
-  cmd.target_component = 1;
-  cmd.source_system = 1;
-  cmd.source_component = 1;
-  cmd.from_external = true;
-  vehicle_command_pub_->publish(cmd);
-}
-
-void TanhNode::publishStartTrackingSignal(bool enabled) {
-  if (!start_tracking_pub_) {
-    return;
-  }
-
-  std_msgs::msg::Bool msg;
-  msg.data = enabled;
-  start_tracking_pub_->publish(msg);
-}
-
-void TanhNode::updateHoldReference(double target_z_ned) {
-  if (!has_position_state_) {
-    return;
-  }
-
-  hold_ref_ = makeHoldReference(state_, target_z_ned, current_yaw_);
-  has_hold_ref_ = true;
-}
-
-void TanhNode::updateCurrentHoldReference() {
-  updateHoldReference(state_.position_ned.z());
-}
-
-void TanhNode::resetMissionProgress() {
-  publishStartTrackingSignal(false);
-  start_tracking_sent_ = false;
-  resetTakeoffProgress();
-}
-
-void TanhNode::resetTakeoffProgress() {
-  takeoff_reached_ = false;
-  takeoff_reached_since_us_ = 0;
-}
-
-bool TanhNode::takeoffHoldComplete(uint64_t now_us) {
-  const double altitude_error = std::abs(state_.position_ned.z() - mission_takeoff_target_z_);
-  if (altitude_error > mission_takeoff_z_threshold_) {
-    resetTakeoffProgress();
-    return false;
-  }
-
-  if (!takeoff_reached_) {
-    takeoff_reached_ = true;
-    takeoff_reached_since_us_ = now_us;
-  }
-
-  return elapsedSeconds(now_us, takeoff_reached_since_us_) >= mission_takeoff_hold_time_s_;
-}
-
-void TanhNode::publishStartTrackingOnce() {
-  if (start_tracking_sent_) {
-    return;
-  }
-
-  publishStartTrackingSignal(true);
-  start_tracking_sent_ = true;
-}
-
-void TanhNode::handleMissionPreconditions() {
-  if (!is_offboard_ && mission_state_ != WAIT_FOR_OFFBOARD) {
-    const char* previous_state = "WAIT_FOR_OFFBOARD";
-    switch (mission_state_) {
-      case WAIT_FOR_ARMING:
-        previous_state = "WAIT_FOR_ARMING";
-        break;
-      case TAKEOFF:
-        previous_state = "TAKEOFF";
-        break;
-      case HOLD:
-        previous_state = "HOLD";
-        break;
-      case TRACKING:
-        previous_state = "TRACKING";
-        break;
-      case WAIT_FOR_OFFBOARD:
-        break;
-    }
-    resetMissionProgress();
-    updateCurrentHoldReference();
-    RCLCPP_INFO(this->get_logger(), "Mission state: %s -> %s (%s)", previous_state, "WAIT_FOR_OFFBOARD", "offboard lost");
-    mission_state_ = WAIT_FOR_OFFBOARD;
-  }
-
-  if (!is_armed_ && mission_state_ != WAIT_FOR_OFFBOARD &&
-      mission_state_ != WAIT_FOR_ARMING) {
-    const char* previous_state = "WAIT_FOR_OFFBOARD";
-    switch (mission_state_) {
-      case TAKEOFF:
-        previous_state = "TAKEOFF";
-        break;
-      case HOLD:
-        previous_state = "HOLD";
-        break;
-      case TRACKING:
-        previous_state = "TRACKING";
-        break;
-      case WAIT_FOR_OFFBOARD:
-      case WAIT_FOR_ARMING:
-        break;
-    }
-    resetMissionProgress();
-    updateCurrentHoldReference();
-    RCLCPP_INFO(this->get_logger(), "Mission state: %s -> %s (%s)", previous_state, "WAIT_FOR_ARMING", "vehicle disarmed");
-    mission_state_ = WAIT_FOR_ARMING;
-  }
-}
-
-void TanhNode::maybeSendAutomaticRequests(uint64_t now_us) {
-  if (has_position_loop_command_ && offboard_counter_ < offboard_setpoint_warmup_) {
-    ++offboard_counter_;
-  }
-
-  const bool warmup_done = offboard_counter_ >= offboard_setpoint_warmup_;
-  if (!has_position_loop_command_ || !warmup_done) {
-    return;
-  }
-
-  if (enable_auto_offboard_ && !is_offboard_ &&
-      requestDue(now_us, last_offboard_request_us_, mission_request_interval_s_)) {
-    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0f, 6.0f, 0.0f);
-    last_offboard_request_us_ = now_us;
-  }
-
-  if (enable_auto_arm_ && is_offboard_ && !is_armed_ &&
-      requestDue(now_us, last_arm_request_us_, mission_request_interval_s_)) {
-    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0f, 0.0f, 0.0f);
-    last_arm_request_us_ = now_us;
-  }
-}
-
-void TanhNode::updateMissionStateMachine(uint64_t now_us) {
-  switch (mission_state_) {
-    case WAIT_FOR_OFFBOARD:
-      updateCurrentHoldReference();
-      if (is_offboard_) {
-        last_offboard_request_us_ = 0;
-        RCLCPP_INFO(this->get_logger(), "Mission state: WAIT_FOR_OFFBOARD -> WAIT_FOR_ARMING (%s)", "offboard enabled");
-        mission_state_ = WAIT_FOR_ARMING;
-      }
-      break;
-
-    case WAIT_FOR_ARMING:
-      updateCurrentHoldReference();
-      if (!is_offboard_) {
-        RCLCPP_INFO(this->get_logger(), "Mission state: WAIT_FOR_ARMING -> WAIT_FOR_OFFBOARD (%s)", "waiting for offboard");
-        mission_state_ = WAIT_FOR_OFFBOARD;
-      } else if (is_armed_) {
-        last_arm_request_us_ = 0;
-        updateHoldReference(mission_takeoff_target_z_);
-        resetTakeoffProgress();
-        RCLCPP_INFO(this->get_logger(), "Mission state: WAIT_FOR_ARMING -> TAKEOFF (%s)", "armed");
-        mission_state_ = TAKEOFF;
-      }
-      break;
-
-    case TAKEOFF:
-      updateHoldReference(mission_takeoff_target_z_);
-      if (takeoffHoldComplete(now_us)) {
-        if (!start_tracking_sent_) {
-          publishStartTrackingOnce();
-        }
-        RCLCPP_INFO(this->get_logger(), "Mission state: TAKEOFF -> HOLD (%s)", "takeoff complete");
-        mission_state_ = HOLD;
-      }
-      break;
-
-    case HOLD:
-      if (hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
-        RCLCPP_INFO(this->get_logger(), "Mission state: HOLD -> TRACKING (%s)", "trajectory received");
-        mission_state_ = TRACKING;
-      }
-      break;
-
-    case TRACKING:
-      if (!hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
-        updateCurrentHoldReference();
-        RCLCPP_INFO(this->get_logger(), "Mission state: TRACKING -> HOLD (%s)", "trajectory timeout");
-        mission_state_ = HOLD;
-      }
-      break;
-  }
-}
-
-const TrajectoryRef* TanhNode::selectActiveReference(uint64_t now_us) const {
-  if (mission_state_ == TRACKING && hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
-    return &external_ref_;
-  }
-
-  if (has_hold_ref_ && hold_ref_.valid) {
-    return &hold_ref_;
-  }
-
-  return nullptr;
-}
-
-void TanhNode::publishMotorCommands(const ControlOutput& out, uint64_t now_us) {
-  if (!motors_pub_) {
-    return;
-  }
-
-  px4_msgs::msg::ActuatorMotors motors{};
-  motors.timestamp = now_us;
-  motors.timestamp_sample = now_us;
-  motors.reversible_flags = 0;
-
-  const float nan = std::numeric_limits<float>::quiet_NaN();
-  motors.control.fill(nan);
-  for (int output_index = 0; output_index < 4; ++output_index) {
-    const int internal_index = motor_output_map_[output_index];
-    const double control = out.motor_controls(internal_index);
-    motors.control[output_index] = static_cast<float>(std::isfinite(control) ? std::clamp(control, 0.0, 1.0) : 0.0);
-  }
-
-  motors_pub_->publish(motors);
-}
-
-void TanhNode::publishThrustSetpoint(const ControlOutput& out, uint64_t now_us) {
-  if (!publish_vehicle_thrust_setpoint_ || !thrust_sp_pub_) {
-    return;
-  }
-
-  px4_msgs::msg::VehicleThrustSetpoint thrust_sp{};
-  thrust_sp.timestamp = now_us;
-  thrust_sp.timestamp_sample = now_us;
-
-  double throttle = 0.0;
-  const double denominator = 4.0 * std::max(1e-6, motor_force_max_);
-  if (std::isfinite(out.thrust_total)) {
-    const double relative_thrust = std::clamp(out.thrust_total / denominator, 0.0, 1.0);
-    throttle = throttleFromRelativeThrust(relative_thrust, thrust_model_factor_);
-  }
-
-  thrust_sp.xyz = {0.0f, 0.0f, static_cast<float>(-throttle)};
-  thrust_sp_pub_->publish(thrust_sp);
 }
 
 void TanhNode::positionControlLoop(uint64_t sample_us) {
@@ -640,6 +358,242 @@ void TanhNode::attitudeControlLoop(uint64_t sample_us) {
 
   publishMotorCommands(out, now_us);
   publishThrustSetpoint(out, now_us);
+}
+
+void TanhNode::publishVehicleCommand(uint32_t command, float param1, float param2, float param3) {
+  if (!vehicle_command_pub_) {
+    return;
+  }
+
+  px4_msgs::msg::VehicleCommand cmd{};
+  cmd.timestamp = nowMicros(*this->get_clock());
+  cmd.param1 = param1;
+  cmd.param2 = param2;
+  cmd.param3 = param3;
+  cmd.command = command;
+  cmd.target_system = 1;
+  cmd.target_component = 1;
+  cmd.source_system = 1;
+  cmd.source_component = 1;
+  cmd.from_external = true;
+  vehicle_command_pub_->publish(cmd);
+}
+
+void TanhNode::publishStartTrackingSignal(bool enabled) {
+  if (!start_tracking_pub_) {
+    return;
+  }
+
+  std_msgs::msg::Bool msg;
+  msg.data = enabled;
+  start_tracking_pub_->publish(msg);
+}
+
+void TanhNode::publishOffboardControlMode(uint64_t now_us) {
+  if (!publish_offboard_control_mode_ || !offboard_mode_pub_) {
+    return;
+  }
+
+  px4_msgs::msg::OffboardControlMode mode{};
+  mode.timestamp = now_us;
+  mode.position = false;
+  mode.velocity = false;
+  mode.acceleration = false;
+  mode.attitude = false;
+  mode.body_rate = false;
+  mode.thrust_and_torque = false;
+  mode.direct_actuator = true;
+  offboard_mode_pub_->publish(mode);
+}
+
+void TanhNode::updateHoldReference(double target_z_ned) {
+  if (!has_position_state_) {
+    return;
+  }
+
+  hold_ref_ = makeHoldReference(state_, target_z_ned, current_yaw_);
+  has_hold_ref_ = true;
+}
+
+void TanhNode::updateCurrentHoldReference() {
+  updateHoldReference(state_.position_ned.z());
+}
+
+void TanhNode::resetMissionProgress() {
+  publishStartTrackingSignal(false);
+  start_tracking_sent_ = false;
+  resetTakeoffProgress();
+}
+
+void TanhNode::resetTakeoffProgress() {
+  takeoff_reached_ = false;
+  takeoff_reached_since_us_ = 0;
+}
+
+bool TanhNode::takeoffHoldComplete(uint64_t now_us) {
+  const double altitude_error = std::abs(state_.position_ned.z() - mission_takeoff_target_z_);
+  if (altitude_error > mission_takeoff_z_threshold_) {
+    resetTakeoffProgress();
+    return false;
+  }
+
+  if (!takeoff_reached_) {
+    takeoff_reached_ = true;
+    takeoff_reached_since_us_ = now_us;
+  }
+
+  return elapsedSeconds(now_us, takeoff_reached_since_us_) >= mission_takeoff_hold_time_s_;
+}
+
+void TanhNode::publishStartTrackingOnce() {
+  if (start_tracking_sent_) {
+    return;
+  }
+
+  publishStartTrackingSignal(true);
+  start_tracking_sent_ = true;
+}
+
+void TanhNode::handleMissionPreconditions() {
+  if (!is_offboard_ && mission_state_ != WAIT_FOR_OFFBOARD) {
+    const MissionState previous_state = mission_state_;
+    resetMissionProgress();
+    updateCurrentHoldReference();
+    mission_state_ = WAIT_FOR_OFFBOARD;
+    logMissionTransition(this->get_logger(), previous_state, mission_state_, "offboard lost");
+  }
+
+  if (!is_armed_ && mission_state_ != WAIT_FOR_OFFBOARD && mission_state_ != WAIT_FOR_ARMING) {
+    const MissionState previous_state = mission_state_;
+    resetMissionProgress();
+    updateCurrentHoldReference();
+    mission_state_ = WAIT_FOR_ARMING;
+    logMissionTransition(this->get_logger(), previous_state, mission_state_, "vehicle disarmed");
+  }
+}
+
+void TanhNode::maybeSendAutomaticRequests(uint64_t now_us) {
+  if (has_position_loop_command_ && offboard_counter_ < offboard_setpoint_warmup_) {
+    ++offboard_counter_;
+  }
+
+  const bool warmup_done = offboard_counter_ >= offboard_setpoint_warmup_;
+  if (!has_position_loop_command_ || !warmup_done) {
+    return;
+  }
+
+  if (enable_auto_offboard_ && !is_offboard_ &&
+      requestDue(now_us, last_offboard_request_us_, mission_request_interval_s_)) {
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0f, 6.0f, 0.0f);
+    last_offboard_request_us_ = now_us;
+  }
+
+  if (enable_auto_arm_ && is_offboard_ && !is_armed_ &&
+      requestDue(now_us, last_arm_request_us_, mission_request_interval_s_)) {
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0f, 0.0f, 0.0f);
+    last_arm_request_us_ = now_us;
+  }
+}
+
+void TanhNode::updateMissionStateMachine(uint64_t now_us) {
+  switch (mission_state_) {
+    case WAIT_FOR_OFFBOARD:
+      updateCurrentHoldReference();
+      if (is_offboard_) {
+        last_offboard_request_us_ = 0;
+        logMissionTransition(this->get_logger(), mission_state_, WAIT_FOR_ARMING, "offboard enabled");
+        mission_state_ = WAIT_FOR_ARMING;
+      }
+      break;
+
+    case WAIT_FOR_ARMING:
+      updateCurrentHoldReference();
+      if (!is_offboard_) {
+        logMissionTransition(this->get_logger(), mission_state_, WAIT_FOR_OFFBOARD, "waiting for offboard");
+        mission_state_ = WAIT_FOR_OFFBOARD;
+      } else if (is_armed_) {
+        last_arm_request_us_ = 0;
+        updateHoldReference(mission_takeoff_target_z_);
+        resetTakeoffProgress();
+        logMissionTransition(this->get_logger(), mission_state_, TAKEOFF, "armed");
+        mission_state_ = TAKEOFF;
+      }
+      break;
+
+    case TAKEOFF:
+      updateHoldReference(mission_takeoff_target_z_);
+      if (takeoffHoldComplete(now_us)) {
+        if (!start_tracking_sent_) {
+          publishStartTrackingOnce();
+        }
+        logMissionTransition(this->get_logger(), mission_state_, HOLD, "takeoff complete");
+        mission_state_ = HOLD;
+      }
+      break;
+
+    case HOLD:
+      if (hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
+        logMissionTransition(this->get_logger(), mission_state_, TRACKING, "trajectory received");
+        mission_state_ = TRACKING;
+      }
+      break;
+
+    case TRACKING:
+      if (!hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
+        updateCurrentHoldReference();
+        logMissionTransition(this->get_logger(), mission_state_, HOLD, "trajectory timeout");
+        mission_state_ = HOLD;
+      }
+      break;
+  }
+}
+
+const TrajectoryRef* TanhNode::selectActiveReference(uint64_t now_us) const {
+  if (mission_state_ == TRACKING && hasFreshExternalReference(external_ref_, now_us, last_reference_receive_us_, mission_reference_timeout_s_)) {
+    return &external_ref_;
+  }
+
+  if (has_hold_ref_ && hold_ref_.valid) {
+    return &hold_ref_;
+  }
+
+  return nullptr;
+}
+
+void TanhNode::publishMotorCommands(const ControlOutput& out, uint64_t now_us) {
+  if (!motors_pub_) {
+    return;
+  }
+
+  px4_msgs::msg::ActuatorMotors motors{};
+  motors.timestamp = now_us;
+  motors.timestamp_sample = now_us;
+  motors.reversible_flags = 0;
+
+  motors.control.fill(0.0f);
+  for (int output_index = 0; output_index < 4; ++output_index) {
+    const int internal_index = motor_output_map_[output_index];
+    const double control = out.motor_controls(internal_index);
+    motors.control[output_index] = static_cast<float>(std::clamp(control, 0.0, 1.0));
+  }
+
+  motors_pub_->publish(motors);
+}
+
+void TanhNode::publishThrustSetpoint(const ControlOutput& out, uint64_t now_us) {
+  if (!publish_vehicle_thrust_setpoint_ || !thrust_sp_pub_) {
+    return;
+  }
+
+  px4_msgs::msg::VehicleThrustSetpoint thrust_sp{};
+  thrust_sp.timestamp = now_us;
+  thrust_sp.timestamp_sample = now_us;
+
+  const double denominator = 4.0 * std::max(1e-6, motor_force_max_);
+  const double relative_thrust = std::clamp(out.thrust_total / denominator, 0.0, 1.0);
+  const double throttle = throttleFromRelativeThrust(relative_thrust, thrust_model_factor_);
+  thrust_sp.xyz = {0.0f, 0.0f, static_cast<float>(-throttle)};
+  thrust_sp_pub_->publish(thrust_sp);
 }
 
 }  // namespace tanh_ctrl

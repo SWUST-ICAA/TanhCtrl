@@ -23,24 +23,9 @@ uint64_t selectMessageTimestampUs(uint64_t timestamp_sample_us, uint64_t timesta
 double computeLoopDtFromSample(uint64_t sample_timestamp_us, uint64_t* last_sample_timestamp_us);
 
 /**
- * @brief Estimate NED linear acceleration from successive NED velocity samples.
- */
-Eigen::Vector3d estimateLinearAccelerationNed(const Eigen::Vector3d& current_velocity_ned, const Eigen::Vector3d& previous_velocity_ned, double dt);
-
-/**
  * @brief Invert a PX4 THR_MDL_FAC-style normalized thrust model.
  */
 double throttleFromRelativeThrust(double relative_thrust, double thrust_model_factor);
-
-/**
- * @brief Replace non-finite scalars with zero.
- */
-double sanitizeScalar(double value);
-
-/**
- * @brief Replace non-finite vectors with zero.
- */
-Eigen::Vector3d sanitizeVector(const Eigen::Vector3d& value);
 
 /**
  * @brief Limit horizontal thrust so the thrust vector respects a tilt bound.

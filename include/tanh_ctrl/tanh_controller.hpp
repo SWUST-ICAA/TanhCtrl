@@ -34,12 +34,9 @@ class TanhController {
   bool computeAttitudeLoop(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, ControlOutput* out);
 
  private:
-  static double sanitizeCutoff(double cutoff_hz);
-  static Eigen::Vector3d sanitizeCutoff(const Eigen::Vector3d& cutoff_hz);
-  void initializeLoopState(const VehicleState&);
-
-  void computePosition(const VehicleState& state, const TrajectoryRef& ref, double dt, Eigen::Vector3d* thrust_vec_ned, double* thrust_norm);
+  void computePosition(const VehicleState& state, const TrajectoryRef& ref, double dt, Eigen::Vector3d* thrust_vec_ned);
   void computeAttitude(const VehicleState& state, const AttitudeReference& attitude_reference, double dt, Eigen::Vector3d* torque_body);
+  void initializeLoopState();
 
   double mass_{1.0};
   double gravity_{9.81};

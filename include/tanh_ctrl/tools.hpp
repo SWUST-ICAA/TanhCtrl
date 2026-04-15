@@ -29,28 +29,13 @@ inline double quaternionToYaw(const Eigen::Quaterniond& q_body_to_ned) {
 }
 
 template <typename Array3T>
-bool isFiniteVec3(const Array3T& values) {
-  return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
-}
-
-template <typename Array4T>
-bool isFiniteQuat(const Array4T& values) {
-  return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]) && std::isfinite(values[3]);
-}
-
-template <typename Array3T>
-Eigen::Vector3d eigenFromArray3OrZero(const Array3T& values) {
-  return Eigen::Vector3d(std::isfinite(values[0]) ? static_cast<double>(values[0]) : 0.0, std::isfinite(values[1]) ? static_cast<double>(values[1]) : 0.0, std::isfinite(values[2]) ? static_cast<double>(values[2]) : 0.0);
+Eigen::Vector3d eigenFromArray3(const Array3T& values) {
+  return Eigen::Vector3d(static_cast<double>(values[0]), static_cast<double>(values[1]), static_cast<double>(values[2]));
 }
 
 template <typename MsgVec3T>
-bool isFiniteXyz(const MsgVec3T& values) {
-  return std::isfinite(values.x) && std::isfinite(values.y) && std::isfinite(values.z);
-}
-
-template <typename MsgVec3T>
-Eigen::Vector3d eigenFromXyzOrZero(const MsgVec3T& values) {
-  return Eigen::Vector3d(std::isfinite(values.x) ? static_cast<double>(values.x) : 0.0, std::isfinite(values.y) ? static_cast<double>(values.y) : 0.0, std::isfinite(values.z) ? static_cast<double>(values.z) : 0.0);
+Eigen::Vector3d eigenFromXyz(const MsgVec3T& values) {
+  return Eigen::Vector3d(static_cast<double>(values.x), static_cast<double>(values.y), static_cast<double>(values.z));
 }
 
 inline bool requestDue(uint64_t now_us, uint64_t last_request_us, double interval_s) {
