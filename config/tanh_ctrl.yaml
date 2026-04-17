@@ -24,10 +24,10 @@ tanh_ctrl:
 
     position:
       horizontal:
-        M_P: 0.8
-        K_P: 6.0
-        M_V: 8.0
-        K_V: 0.5
+        M_P: 0.6
+        K_P: 10.0
+        M_V: 8.5
+        K_V: 0.55
         K_Acceleration: 1.1
         observer:
           P_V: 1.5
@@ -47,9 +47,9 @@ tanh_ctrl:
       tilt:
         M_Angle: 1.0
         K_Angle: 18.0
-        M_AngularVelocity: 49.0
+        M_AngularVelocity: 40.0
         K_AngularVelocity: 2.0
-        K_AngularAcceleration: 1.0
+        K_AngularAcceleration: 2.12
         observer:
           P_AngularVelocity: 20.5
           L_AngularVelocity: 0.5
