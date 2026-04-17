@@ -2,11 +2,15 @@
 
 from dataclasses import dataclass
 import math
+import threading
 from typing import Optional, Tuple
 
 import numpy as np
 import rclpy
 from px4_msgs.msg import VehicleOdometry
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.clock import Clock, ClockType
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -379,7 +383,14 @@ class FlatnessReferencePublisher(Node):
             self.get_parameter("vehicle.inertia_diag").value,
             dtype=float,
         )
-        self.derivative_dt = max(1.0e-3, min(0.02, 1.0 / max(self.publish_rate_hz, 1.0)))
+        self.publish_period_s = 1.0 / max(self.publish_rate_hz, 1.0)
+        self.derivative_dt = max(1.0e-3, min(0.02, self.publish_period_s))
+        self.publish_gap_warn_s = max(0.1, 5.0 * self.publish_period_s)
+        self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self.pose_lock = threading.Lock()
+        self.odom_callback_group = MutuallyExclusiveCallbackGroup()
+        self.start_callback_group = MutuallyExclusiveCallbackGroup()
+        self.timer_callback_group = MutuallyExclusiveCallbackGroup()
 
         self.enabled = False
         self.start_time_s = 0.0
@@ -389,6 +400,7 @@ class FlatnessReferencePublisher(Node):
         self.active_base_height_ned = 0.0
         self.locked_yaw_rad = 0.0
         self.last_pose_frame_warning_ns = 0
+        self.last_publish_time_s: Optional[float] = None
 
         self.reference_pub = self.create_publisher(FlatTrajectoryReference, self.reference_topic, 10)
         self.odom_sub = self.create_subscription(
@@ -396,6 +408,7 @@ class FlatnessReferencePublisher(Node):
             "/fmu/out/vehicle_odometry",
             self.odometry_callback,
             qos_profile_sensor_data,
+            callback_group=self.odom_callback_group,
         )
         start_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -408,11 +421,16 @@ class FlatnessReferencePublisher(Node):
             self.start_tracking_topic,
             self.start_callback,
             start_qos,
+            callback_group=self.start_callback_group,
         )
         self.timer = self.create_timer(
-            1.0 / max(self.publish_rate_hz, 1.0),
+            self.publish_period_s,
             self.timer_callback,
+            callback_group=self.timer_callback_group,
         )
+
+    def steady_now_s(self) -> float:
+        return self.steady_clock.now().nanoseconds / 1.0e9
 
     def odometry_callback(self, msg: VehicleOdometry) -> None:
         if msg.pose_frame != VehicleOdometry.POSE_FRAME_NED:
@@ -424,35 +442,46 @@ class FlatnessReferencePublisher(Node):
                 self.last_pose_frame_warning_ns = now_ns
             return
 
-        self.latest_position_ned = np.asarray(msg.position, dtype=float)
+        latest_position_ned = np.asarray(msg.position, dtype=float)
         q_wxyz = np.asarray(msg.q, dtype=float)
         q_wxyz = quaternion_normalize(q_wxyz)
         w, x, y, z = q_wxyz
         siny_cosp = 2.0 * (w * z + x * y)
         cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-        self.latest_yaw_rad = math.atan2(siny_cosp, cosy_cosp)
+        latest_yaw_rad = math.atan2(siny_cosp, cosy_cosp)
+
+        with self.pose_lock:
+            self.latest_position_ned = latest_position_ned
+            self.latest_yaw_rad = latest_yaw_rad
 
     def start_callback(self, msg: Bool) -> None:
         if msg.data:
             if self.enabled:
                 return
-            if self.latest_position_ned is None:
+
+            with self.pose_lock:
+                latest_position_ned = (
+                    None if self.latest_position_ned is None else self.latest_position_ned.copy()
+                )
+                latest_yaw_rad = self.latest_yaw_rad
+
+            if latest_position_ned is None:
                 self.get_logger().warning("Start requested before odometry was received")
                 return
             if self.yaw_mode == "fixed":
-                self.locked_yaw_rad = (
-                    float(self.latest_yaw_rad) if self.latest_yaw_rad is not None else 0.0
-                )
-            self.active_center_ned = self.latest_position_ned.copy()
+                self.locked_yaw_rad = float(latest_yaw_rad) if latest_yaw_rad is not None else 0.0
+            self.active_center_ned = latest_position_ned.copy()
             self.active_center_ned -= self.trajectory_start_offset_ned()
-            self.active_base_height_ned = float(self.latest_position_ned[2]) + self.height_offset_ned
+            self.active_base_height_ned = float(latest_position_ned[2]) + self.height_offset_ned
             self.enabled = True
-            self.start_time_s = self.get_clock().now().nanoseconds / 1.0e9
+            self.start_time_s = self.steady_now_s()
+            self.last_publish_time_s = None
             self.get_logger().info("Flatness trajectory publisher enabled")
             return
 
         if self.enabled:
             self.enabled = False
+            self.last_publish_time_s = None
             self.get_logger().info("Flatness trajectory publisher disabled")
 
     def trajectory_start_offset_ned(self) -> np.ndarray:
@@ -568,8 +597,18 @@ class FlatnessReferencePublisher(Node):
         if not self.enabled:
             return
 
+        steady_now_s = self.steady_now_s()
+        if self.last_publish_time_s is not None:
+            publish_gap_s = steady_now_s - self.last_publish_time_s
+            if publish_gap_s > self.publish_gap_warn_s:
+                self.get_logger().warning(
+                    f"Reference publish gap detected: {publish_gap_s:.3f}s "
+                    f"(nominal {self.publish_period_s:.3f}s)"
+                )
+        self.last_publish_time_s = steady_now_s
+
         now = self.get_clock().now()
-        elapsed_s = now.nanoseconds / 1.0e9 - self.start_time_s
+        elapsed_s = steady_now_s - self.start_time_s
         reference = self.sample_flat_reference(elapsed_s)
 
         msg = FlatTrajectoryReference()
@@ -589,9 +628,12 @@ class FlatnessReferencePublisher(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = FlatnessReferencePublisher()
+    executor = MultiThreadedExecutor(num_threads=3)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
