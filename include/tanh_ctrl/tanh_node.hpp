@@ -32,6 +32,8 @@ TrajectoryRef makeHoldReference(const VehicleState& state, double target_z_ned, 
 
 bool hasFreshExternalReference(const TrajectoryRef& external_ref, uint64_t now_us, uint64_t last_reference_receive_us, double timeout_s);
 
+ControlOutput gateControlOutputForArmingState(const ControlOutput& out, bool is_armed);
+
 class TanhNode : public rclcpp::Node {
  public:
   explicit TanhNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
@@ -54,6 +56,7 @@ class TanhNode : public rclcpp::Node {
   void publishOffboardControlMode(uint64_t now_us);
   void publishMotorCommands(const ControlOutput& out, uint64_t now_us);
   void publishThrustSetpoint(const ControlOutput& out, uint64_t now_us);
+  void resetControllerRuntimeState();
 
   void updateHoldReference(double target_z_ned);
   void updateCurrentHoldReference();

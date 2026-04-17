@@ -81,6 +81,14 @@ bool hasFreshExternalReference(const TrajectoryRef& external_ref, uint64_t now_u
   return elapsedSeconds(now_us, last_reference_receive_us) <= timeout_s;
 }
 
+ControlOutput gateControlOutputForArmingState(const ControlOutput& out, bool is_armed) {
+  if (is_armed) {
+    return out;
+  }
+
+  return ControlOutput{};
+}
+
 TanhNode::TanhNode(const rclcpp::NodeOptions& options) : Node("tanh_ctrl", options) {
   declareParameters();
   loadParams();
@@ -271,6 +279,7 @@ void TanhNode::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedP
     return;
   }
 
+  const bool was_armed = is_armed_;
   const bool was_offboard = is_offboard_;
   const uint8_t previous_nav_state = last_nav_state_;
 
@@ -280,6 +289,10 @@ void TanhNode::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedP
 
   if (is_offboard_) {
     offboard_ever_engaged_ = true;
+  }
+
+  if (was_armed && !is_armed_) {
+    resetControllerRuntimeState();
   }
 
   if (offboard_ever_engaged_ && was_offboard && !is_offboard_ && !exit_requested_) {
@@ -320,10 +333,22 @@ void TanhNode::positionControlLoop(uint64_t sample_us) {
 
   AttitudeReference position_loop_command{};
   const double dt = computeLoopDtFromSample(sample_us, &last_position_loop_us_);
+  const bool freeze_controller_state = !is_armed_;
+  if (freeze_controller_state) {
+    controller_.reset();
+  }
+
   if (!controller_.computePositionLoop(state_, *active_ref, dt, &position_loop_command)) {
+    if (freeze_controller_state) {
+      controller_.reset();
+    }
     position_loop_command_ = AttitudeReference{};
     has_position_loop_command_ = false;
     return;
+  }
+
+  if (freeze_controller_state) {
+    controller_.reset();
   }
 
   position_loop_command_ = position_loop_command;
@@ -352,12 +377,25 @@ void TanhNode::attitudeControlLoop(uint64_t sample_us) {
 
   ControlOutput out;
   const double dt = computeLoopDtFromSample(sample_us, &last_attitude_loop_us_);
+  const bool freeze_controller_state = !is_armed_;
+  if (freeze_controller_state) {
+    controller_.reset();
+  }
+
   if (!controller_.computeAttitudeLoop(state_, position_loop_command_, dt, &out)) {
+    if (freeze_controller_state) {
+      controller_.reset();
+    }
     return;
   }
 
-  publishMotorCommands(out, now_us);
-  publishThrustSetpoint(out, now_us);
+  if (freeze_controller_state) {
+    controller_.reset();
+  }
+
+  const ControlOutput publish_out = gateControlOutputForArmingState(out, is_armed_);
+  publishMotorCommands(publish_out, now_us);
+  publishThrustSetpoint(publish_out, now_us);
 }
 
 void TanhNode::publishVehicleCommand(uint32_t command, float param1, float param2, float param3) {
@@ -404,6 +442,10 @@ void TanhNode::publishOffboardControlMode(uint64_t now_us) {
   mode.thrust_and_torque = false;
   mode.direct_actuator = true;
   offboard_mode_pub_->publish(mode);
+}
+
+void TanhNode::resetControllerRuntimeState() {
+  controller_.reset();
 }
 
 void TanhNode::updateHoldReference(double target_z_ned) {
@@ -514,6 +556,7 @@ void TanhNode::updateMissionStateMachine(uint64_t now_us) {
       } else if (is_armed_) {
         last_arm_request_us_ = 0;
         updateHoldReference(mission_takeoff_target_z_);
+        resetControllerRuntimeState();
         resetTakeoffProgress();
         logMissionTransition(this->get_logger(), mission_state_, TAKEOFF, "armed");
         mission_state_ = TAKEOFF;
