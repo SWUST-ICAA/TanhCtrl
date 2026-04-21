@@ -38,11 +38,6 @@ void applyTiltLimit(Eigen::Vector3d* thrust_vector_over_mass_ned, double max_til
 Eigen::Quaterniond computeDesiredAttitude(const Eigen::Vector3d& thrust_direction_ned, double yaw);
 
 /**
- * @brief Rotate a vector from the reference-body frame into the current body frame.
- */
-Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned, const Eigen::Vector3d& reference_body_vector);
-
-/**
  * @brief Build the inner-loop attitude reference from thrust and trajectory feedforward.
  */
 AttitudeReference computeAttitudeReference(const Eigen::Vector3d& desired_thrust_vector_ned, const TrajectoryRef& ref);

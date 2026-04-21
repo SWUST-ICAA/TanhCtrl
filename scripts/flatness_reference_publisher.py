@@ -39,9 +39,11 @@ class FlatReference:
     position: Array3
     velocity: Array3
     acceleration: Array3
+    jerk: Array3
+    snap: Array3
     yaw: float
-    body_rates: Array3
-    angular_acceleration: Array3
+    yaw_rate: float
+    yaw_acceleration: float
 
 
 def normalize(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
@@ -64,132 +66,12 @@ def quaternion_normalize(q_wxyz: np.ndarray) -> np.ndarray:
     )
 
 
-def align_quaternion_sign(q_wxyz: np.ndarray, anchor_q_wxyz: np.ndarray) -> np.ndarray:
-    q = quaternion_normalize(q_wxyz)
-    anchor_q = quaternion_normalize(anchor_q_wxyz)
-    if float(np.dot(q, anchor_q)) < 0.0:
-        q = -q
-    return q
+def wrap_angle(angle_rad: float) -> float:
+    return math.atan2(math.sin(angle_rad), math.cos(angle_rad))
 
 
-def quaternion_conjugate(q_wxyz: np.ndarray) -> np.ndarray:
-    q = quaternion_normalize(q_wxyz)
-    return np.array([q[0], -q[1], -q[2], -q[3]], dtype=float)
-
-
-def quaternion_multiply(q1_wxyz: np.ndarray, q2_wxyz: np.ndarray) -> np.ndarray:
-    w1, x1, y1, z1 = quaternion_normalize(q1_wxyz)
-    w2, x2, y2, z2 = quaternion_normalize(q2_wxyz)
-    return np.array(
-        [
-            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-        ],
-        dtype=float,
-    )
-
-
-def quaternion_from_rotation_matrix(rotation: np.ndarray) -> np.ndarray:
-    r = np.asarray(rotation, dtype=float)
-    trace = np.trace(r)
-    if trace > 0.0:
-        s = math.sqrt(trace + 1.0) * 2.0
-        return quaternion_normalize(
-            np.array(
-                [
-                    0.25 * s,
-                    (r[2, 1] - r[1, 2]) / s,
-                    (r[0, 2] - r[2, 0]) / s,
-                    (r[1, 0] - r[0, 1]) / s,
-                ],
-                dtype=float,
-            )
-        )
-
-    diag = np.diag(r)
-    index = int(np.argmax(diag))
-    if index == 0:
-        s = math.sqrt(1.0 + r[0, 0] - r[1, 1] - r[2, 2]) * 2.0
-        q = np.array(
-            [
-                (r[2, 1] - r[1, 2]) / s,
-                0.25 * s,
-                (r[0, 1] + r[1, 0]) / s,
-                (r[0, 2] + r[2, 0]) / s,
-            ],
-            dtype=float,
-        )
-    elif index == 1:
-        s = math.sqrt(1.0 + r[1, 1] - r[0, 0] - r[2, 2]) * 2.0
-        q = np.array(
-            [
-                (r[0, 2] - r[2, 0]) / s,
-                (r[0, 1] + r[1, 0]) / s,
-                0.25 * s,
-                (r[1, 2] + r[2, 1]) / s,
-            ],
-            dtype=float,
-        )
-    else:
-        s = math.sqrt(1.0 + r[2, 2] - r[0, 0] - r[1, 1]) * 2.0
-        q = np.array(
-            [
-                (r[1, 0] - r[0, 1]) / s,
-                (r[0, 2] + r[2, 0]) / s,
-                (r[1, 2] + r[2, 1]) / s,
-                0.25 * s,
-            ],
-            dtype=float,
-        )
-    return quaternion_normalize(q)
-
-
-def quaternion_from_accel_and_yaw_ned(
-    acceleration_ned: np.ndarray,
-    yaw: float,
-    gravity: float,
-) -> np.ndarray:
-    gravity_ned = np.array([0.0, 0.0, gravity], dtype=float)
-    z_body = normalize(gravity_ned - np.asarray(acceleration_ned, dtype=float), gravity_ned)
-    x_course = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=float)
-    y_body = np.cross(z_body, x_course)
-    if np.linalg.norm(y_body) < 1e-9:
-        y_body = np.array([-math.sin(yaw), math.cos(yaw), 0.0], dtype=float)
-    y_body = normalize(y_body, np.array([0.0, 1.0, 0.0], dtype=float))
-    x_body = normalize(np.cross(y_body, z_body), np.array([1.0, 0.0, 0.0], dtype=float))
-    return quaternion_from_rotation_matrix(np.column_stack((x_body, y_body, z_body)))
-
-
-def body_rates_from_quaternion_samples(
-    q_now_wxyz: np.ndarray,
-    q_next_wxyz: np.ndarray,
-    dt: float,
-) -> np.ndarray:
-    if dt <= 1e-9:
-        return np.zeros(3, dtype=float)
-
-    q_now = quaternion_normalize(q_now_wxyz)
-    q_next = align_quaternion_sign(q_next_wxyz, q_now)
-    q_delta = quaternion_multiply(quaternion_conjugate(q_now), q_next)
-    q_delta = quaternion_normalize(q_delta)
-    angle = 2.0 * math.atan2(np.linalg.norm(q_delta[1:]), max(q_delta[0], 1e-9))
-    if angle < 1e-9:
-        return np.zeros(3, dtype=float)
-
-    axis = normalize(q_delta[1:], np.array([1.0, 0.0, 0.0], dtype=float))
-    return axis * (angle / dt)
-
-
-def angular_acceleration_from_rates(
-    body_rates_now: np.ndarray,
-    body_rates_next: np.ndarray,
-    dt: float,
-) -> np.ndarray:
-    omega_now = np.asarray(body_rates_now, dtype=float)
-    omega_next = np.asarray(body_rates_next, dtype=float)
-    return np.zeros(3, dtype=float) if dt <= 1e-9 else (omega_next - omega_now) / dt
+def angle_delta(to_angle_rad: float, from_angle_rad: float) -> float:
+    return wrap_angle(to_angle_rad - from_angle_rad)
 
 
 def yaw_from_velocity_ned(velocity_ned: np.ndarray, fallback_yaw: float) -> float:
@@ -557,32 +439,37 @@ class FlatnessReferencePublisher(Node):
 
     def sample_flat_reference(self, elapsed_s: float) -> FlatReference:
         dt = self.derivative_dt
+        reference_m1 = self.sample_reference_state(elapsed_s - dt)
         reference_now = self.sample_reference_state(elapsed_s)
         reference_p1 = self.sample_reference_state(elapsed_s + dt)
         reference_p2 = self.sample_reference_state(elapsed_s + 2.0 * dt)
 
         fallback_yaw = self.locked_yaw_rad if self.yaw_mode == "fixed" else 0.0
         yaw = self.yaw_reference(reference_now.velocity, fallback_yaw)
+        yaw_m1 = self.yaw_reference(reference_m1.velocity, yaw)
         yaw_p1 = self.yaw_reference(reference_p1.velocity, yaw)
         yaw_p2 = self.yaw_reference(reference_p2.velocity, yaw_p1)
 
-        q_now = quaternion_from_accel_and_yaw_ned(reference_now.acceleration, yaw, self.gravity)
-        q_next = quaternion_from_accel_and_yaw_ned(reference_p1.acceleration, yaw_p1, self.gravity)
-        q_next = align_quaternion_sign(q_next, q_now)
-        q_next2 = quaternion_from_accel_and_yaw_ned(reference_p2.acceleration, yaw_p2, self.gravity)
-        q_next2 = align_quaternion_sign(q_next2, q_next)
-
-        body_rates = body_rates_from_quaternion_samples(q_now, q_next, dt)
-        body_rates_next = body_rates_from_quaternion_samples(q_next, q_next2, dt)
-        angular_acceleration = angular_acceleration_from_rates(body_rates, body_rates_next, dt)
+        jerk = (reference_p1.acceleration - reference_m1.acceleration) / (2.0 * dt)
+        snap = (
+            reference_p1.acceleration
+            - 2.0 * reference_now.acceleration
+            + reference_m1.acceleration
+        ) / (dt ** 2)
+        yaw_rate = angle_delta(yaw_p1, yaw_m1) / (2.0 * dt)
+        yaw_acceleration = (
+            angle_delta(yaw_p1, yaw) - angle_delta(yaw, yaw_m1)
+        ) / (dt ** 2)
 
         return FlatReference(
             position=reference_now.position,
             velocity=reference_now.velocity,
             acceleration=reference_now.acceleration,
+            jerk=jerk,
+            snap=snap,
             yaw=yaw,
-            body_rates=body_rates,
-            angular_acceleration=angular_acceleration,
+            yaw_rate=yaw_rate,
+            yaw_acceleration=yaw_acceleration,
         )
 
     def timer_callback(self) -> None:
@@ -610,9 +497,11 @@ class FlatnessReferencePublisher(Node):
         assign_xyz(msg.position_ned, reference.position)
         assign_xyz(msg.velocity_ned, reference.velocity)
         assign_xyz(msg.acceleration_ned, reference.acceleration)
-        assign_xyz(msg.body_rates_frd, reference.body_rates)
-        assign_xyz(msg.angular_acceleration_frd, reference.angular_acceleration)
+        assign_xyz(msg.jerk_ned, reference.jerk)
+        assign_xyz(msg.snap_ned, reference.snap)
         msg.yaw = float(reference.yaw)
+        msg.yaw_rate = float(reference.yaw_rate)
+        msg.yaw_acceleration = float(reference.yaw_acceleration)
 
         self.reference_pub.publish(msg)
 

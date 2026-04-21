@@ -51,10 +51,11 @@ TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg
   ref.position_ned = eigenFromXyz(msg.position_ned);
   ref.velocity_ned = eigenFromXyz(msg.velocity_ned);
   ref.acceleration_ned = eigenFromXyz(msg.acceleration_ned);
-  ref.angular_velocity_body = eigenFromXyz(msg.body_rates_frd);
-  ref.angular_acceleration_body = eigenFromXyz(msg.angular_acceleration_frd);
-  ref.has_angular_velocity_feedforward = true;
-  ref.has_angular_acceleration_feedforward = true;
+  ref.jerk_ned = eigenFromXyz(msg.jerk_ned);
+  ref.snap_ned = eigenFromXyz(msg.snap_ned);
+  ref.yaw_rate = msg.yaw_rate;
+  ref.yaw_acceleration = msg.yaw_acceleration;
+  ref.has_flatness_feedforward = true;
   ref.yaw = msg.yaw;
   ref.valid = true;
   return ref;

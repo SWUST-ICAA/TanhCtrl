@@ -11,9 +11,60 @@ constexpr double kMinMass = 1e-3;
 constexpr double kMinTiltRad = 1e-3;
 constexpr double kMinDt = 1e-4;
 constexpr double kMaxDt = 0.1;
+constexpr double kMinThrustOverMass = 1e-3;
 
 double clampPositive(double value, double min_value) {
   return std::max(min_value, value);
+}
+
+struct FlatnessAttitudeFeedforward {
+  Eigen::Vector3d angular_velocity_body{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d angular_acceleration_body{Eigen::Vector3d::Zero()};
+};
+
+FlatnessAttitudeFeedforward computeFlatnessAttitudeFeedforward(const VehicleState& state, const AttitudeReference& attitude_reference, double mass) {
+  FlatnessAttitudeFeedforward feedforward;
+
+  const double thrust_over_mass = attitude_reference.collective_thrust / clampPositive(mass, kMinMass);
+  if (!attitude_reference.has_flatness_feedforward || thrust_over_mass <= kMinThrustOverMass) {
+    return feedforward;
+  }
+
+  const Eigen::Quaterniond current_body_to_ned_q = state.q_body_to_ned.normalized();
+  const Eigen::Matrix3d current_body_to_ned = current_body_to_ned_q.toRotationMatrix();
+  const Eigen::Vector3d x_body_ned = current_body_to_ned.col(0);
+  const Eigen::Vector3d y_body_ned = current_body_to_ned.col(1);
+  const Eigen::Vector3d z_body_ned = current_body_to_ned.col(2);
+  const Eigen::Vector3d z_world_ned = Eigen::Vector3d::UnitZ();
+
+  const Eigen::Vector3d omega_body = state.angular_velocity_body;
+  const Eigen::Vector3d omega_ned = current_body_to_ned_q * omega_body;
+  const Eigen::Vector3d current_h_omega_ned = omega_ned.cross(z_body_ned);
+
+  // In this controller's NED/FRD convention, translational dynamics use
+  // a = g - (T/m) z_B. This is the sign-adapted form of the paper's
+  // differential-flatness feedforward, whose equations use +T z_B.
+  const double thrust_over_mass_dot = -attitude_reference.jerk_ned.dot(z_body_ned);
+  const double thrust_over_mass_ddot =
+      -attitude_reference.snap_ned.dot(z_body_ned) - current_h_omega_ned.dot(attitude_reference.jerk_ned);
+  const Eigen::Vector3d reference_h_omega_ned =
+      -(attitude_reference.jerk_ned + thrust_over_mass_dot * z_body_ned) / thrust_over_mass;
+
+  feedforward.angular_velocity_body.x() = -reference_h_omega_ned.dot(y_body_ned);
+  feedforward.angular_velocity_body.y() = reference_h_omega_ned.dot(x_body_ned);
+  feedforward.angular_velocity_body.z() = attitude_reference.yaw_rate * z_world_ned.dot(z_body_ned);
+
+  const Eigen::Vector3d omega_cross_h_omega_ned = omega_ned.cross(current_h_omega_ned);
+  const Eigen::Vector3d reference_h_alpha_ned =
+      -attitude_reference.snap_ned / thrust_over_mass - omega_cross_h_omega_ned -
+      2.0 * (thrust_over_mass_dot / thrust_over_mass) * current_h_omega_ned -
+      (thrust_over_mass_ddot / thrust_over_mass) * z_body_ned;
+
+  feedforward.angular_acceleration_body.x() = -reference_h_alpha_ned.dot(y_body_ned);
+  feedforward.angular_acceleration_body.y() = reference_h_alpha_ned.dot(x_body_ned);
+  feedforward.angular_acceleration_body.z() = attitude_reference.yaw_acceleration * z_world_ned.dot(z_body_ned);
+
+  return feedforward;
 }
 
 }  // namespace
@@ -162,10 +213,9 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Quaterniond q = state.q_body_to_ned.normalized();
   const Eigen::Quaterniond q_d = attitude_reference.attitude_body_to_ned.normalized();
 
-  // Trajectory feedforward is expressed in the reference-body frame and must be
-  // rotated into the current body frame before it is used by the inner loop.
-  const Eigen::Vector3d desired_angular_velocity_body = attitude_reference.has_angular_velocity_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_velocity_body) : Eigen::Vector3d::Zero();
-  const Eigen::Vector3d desired_angular_acceleration_body = attitude_reference.has_angular_acceleration_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_acceleration_body) : Eigen::Vector3d::Zero();
+  const FlatnessAttitudeFeedforward feedforward = computeFlatnessAttitudeFeedforward(state, attitude_reference, mass_);
+  const Eigen::Vector3d desired_angular_velocity_body = feedforward.angular_velocity_body;
+  const Eigen::Vector3d desired_angular_acceleration_body = feedforward.angular_acceleration_body;
 
   Eigen::Quaterniond q_error = q_d.conjugate() * q;
   if (q_error.w() < 0.0) {

@@ -106,11 +106,6 @@ Eigen::Quaterniond computeDesiredAttitude(const Eigen::Vector3d& thrust_directio
   return desired_attitude;
 }
 
-Eigen::Vector3d rotateReferenceBodyVectorToCurrentBody(const Eigen::Quaterniond& current_body_to_ned, const Eigen::Quaterniond& reference_body_to_ned, const Eigen::Vector3d& reference_body_vector) {
-  const Eigen::Quaterniond reference_body_to_current_body = current_body_to_ned.conjugate() * reference_body_to_ned;
-  return reference_body_to_current_body * reference_body_vector;
-}
-
 AttitudeReference computeAttitudeReference(const Eigen::Vector3d& desired_thrust_vector_ned, const TrajectoryRef& ref) {
   AttitudeReference attitude_reference;
 
@@ -125,10 +120,11 @@ AttitudeReference computeAttitudeReference(const Eigen::Vector3d& desired_thrust
   attitude_reference.collective_thrust = collective_thrust;
   attitude_reference.thrust_direction_ned = thrust_vector_ned / collective_thrust;
   attitude_reference.attitude_body_to_ned = computeDesiredAttitude(attitude_reference.thrust_direction_ned, ref.yaw);
-  attitude_reference.angular_velocity_body = ref.angular_velocity_body;
-  attitude_reference.has_angular_velocity_feedforward = ref.has_angular_velocity_feedforward;
-  attitude_reference.angular_acceleration_body = ref.angular_acceleration_body;
-  attitude_reference.has_angular_acceleration_feedforward = ref.has_angular_acceleration_feedforward;
+  attitude_reference.jerk_ned = ref.jerk_ned;
+  attitude_reference.snap_ned = ref.snap_ned;
+  attitude_reference.yaw_rate = ref.yaw_rate;
+  attitude_reference.yaw_acceleration = ref.yaw_acceleration;
+  attitude_reference.has_flatness_feedforward = ref.has_flatness_feedforward;
   attitude_reference.valid = true;
 
   return attitude_reference;
