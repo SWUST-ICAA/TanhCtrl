@@ -42,7 +42,6 @@ class FlatReference:
     yaw: float
     body_rates: Array3
     angular_acceleration: Array3
-    body_torque: Array3
 
 
 def normalize(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
@@ -191,17 +190,6 @@ def angular_acceleration_from_rates(
     omega_now = np.asarray(body_rates_now, dtype=float)
     omega_next = np.asarray(body_rates_next, dtype=float)
     return np.zeros(3, dtype=float) if dt <= 1e-9 else (omega_next - omega_now) / dt
-
-
-def body_torque_from_kinematics(
-    body_rates_now: np.ndarray,
-    angular_acceleration: np.ndarray,
-    inertia_diag: np.ndarray,
-) -> np.ndarray:
-    omega_now = np.asarray(body_rates_now, dtype=float)
-    omega_dot = np.asarray(angular_acceleration, dtype=float)
-    inertia = np.diag(np.asarray(inertia_diag, dtype=float))
-    return inertia @ omega_dot + np.cross(omega_now, inertia @ omega_now)
 
 
 def yaw_from_velocity_ned(velocity_ned: np.ndarray, fallback_yaw: float) -> float:
@@ -366,7 +354,6 @@ class FlatnessReferencePublisher(Node):
         self.declare_parameter("planner.yaw_mode", "track_velocity")
         self.declare_parameter("planner.speed_ramp_time_s", 2.0)
         self.declare_parameter("vehicle.gravity", 9.81)
-        self.declare_parameter("vehicle.inertia_diag", [0.02384669, 0.02394962, 0.04399995])
 
         self.reference_topic = str(self.get_parameter("topics.reference").value)
         self.start_tracking_topic = str(self.get_parameter("topics.start_tracking").value)
@@ -388,10 +375,6 @@ class FlatnessReferencePublisher(Node):
         self.yaw_mode = str(self.get_parameter("planner.yaw_mode").value)
         self.speed_ramp_time_s = float(self.get_parameter("planner.speed_ramp_time_s").value)
         self.gravity = float(self.get_parameter("vehicle.gravity").value)
-        self.inertia_diag = np.asarray(
-            self.get_parameter("vehicle.inertia_diag").value,
-            dtype=float,
-        )
         self.publish_period_s = 1.0 / max(self.publish_rate_hz, 1.0)
         self.derivative_dt = max(1.0e-3, min(0.02, self.publish_period_s))
         self.publish_gap_warn_s = max(0.1, 5.0 * self.publish_period_s)
@@ -592,11 +575,6 @@ class FlatnessReferencePublisher(Node):
         body_rates = body_rates_from_quaternion_samples(q_now, q_next, dt)
         body_rates_next = body_rates_from_quaternion_samples(q_next, q_next2, dt)
         angular_acceleration = angular_acceleration_from_rates(body_rates, body_rates_next, dt)
-        body_torque = body_torque_from_kinematics(
-            body_rates,
-            angular_acceleration,
-            self.inertia_diag,
-        )
 
         return FlatReference(
             position=reference_now.position,
@@ -605,7 +583,6 @@ class FlatnessReferencePublisher(Node):
             yaw=yaw,
             body_rates=body_rates,
             angular_acceleration=angular_acceleration,
-            body_torque=body_torque,
         )
 
     def timer_callback(self) -> None:
@@ -635,7 +612,6 @@ class FlatnessReferencePublisher(Node):
         assign_xyz(msg.acceleration_ned, reference.acceleration)
         assign_xyz(msg.body_rates_frd, reference.body_rates)
         assign_xyz(msg.angular_acceleration_frd, reference.angular_acceleration)
-        assign_xyz(msg.body_torque_frd, reference.body_torque)
         msg.yaw = float(reference.yaw)
 
         self.reference_pub.publish(msg)

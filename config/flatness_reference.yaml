@@ -9,8 +9,6 @@ flatness_reference_publisher:
     vehicle:
       # Gravity magnitude in the NED frame, positive downward
       gravity: 9.81
-      # Body-frame FRD inertia diagonal, used to derive torque feedforward from body rates
-      inertia_diag: [0.02384669, 0.02394962, 0.04399995]
 
     planner:
       # Reference publication rate

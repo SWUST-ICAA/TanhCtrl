@@ -185,11 +185,9 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Vector3d angular_velocity_control_term = att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
   const Eigen::Vector3d angular_acceleration_error_body = state.angular_acceleration_body - desired_angular_acceleration_body;
   const Eigen::Vector3d angular_acceleration_feedforward_torque = inertia_ * desired_angular_acceleration_body;
-  const Eigen::Vector3d additive_feedforward_torque = attitude_reference.has_torque_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.torque_body) : Eigen::Vector3d::Zero();
-  const Eigen::Vector3d feedforward_torque = angular_acceleration_feedforward_torque + additive_feedforward_torque;
   const Eigen::Vector3d angular_acceleration_feedback = inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(angular_acceleration_error_body);
   const auto desiredTorqueFromDisturbance = [&](const Eigen::Vector3d& angular_velocity_disturbance) {
-    return feedforward_torque + omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term - angular_acceleration_feedback;
+    return angular_acceleration_feedforward_torque + omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term - angular_acceleration_feedback;
   };
 
   const Eigen::Vector3d desired_torque_control = desiredTorqueFromDisturbance(angular_velocity_disturbance_filtered);
