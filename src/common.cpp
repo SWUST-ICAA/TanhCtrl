@@ -127,6 +127,8 @@ AttitudeReference computeAttitudeReference(const Eigen::Vector3d& desired_thrust
   attitude_reference.attitude_body_to_ned = computeDesiredAttitude(attitude_reference.thrust_direction_ned, ref.yaw);
   attitude_reference.angular_velocity_body = ref.angular_velocity_body;
   attitude_reference.has_angular_velocity_feedforward = ref.has_angular_velocity_feedforward;
+  attitude_reference.angular_acceleration_body = ref.angular_acceleration_body;
+  attitude_reference.has_angular_acceleration_feedforward = ref.has_angular_acceleration_feedforward;
   attitude_reference.torque_body = ref.torque_body;
   attitude_reference.has_torque_feedforward = ref.has_torque_feedforward;
   attitude_reference.valid = true;

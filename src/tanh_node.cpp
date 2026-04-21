@@ -52,9 +52,11 @@ TrajectoryRef trajectoryReferenceFromMsg(const msg::FlatTrajectoryReference& msg
   ref.velocity_ned = eigenFromXyz(msg.velocity_ned);
   ref.acceleration_ned = eigenFromXyz(msg.acceleration_ned);
   ref.angular_velocity_body = eigenFromXyz(msg.body_rates_frd);
+  ref.angular_acceleration_body = eigenFromXyz(msg.angular_acceleration_frd);
   ref.has_angular_velocity_feedforward = true;
-  ref.torque_body = eigenFromXyz(msg.body_torque_frd);
-  ref.has_torque_feedforward = true;
+  ref.has_angular_acceleration_feedforward = true;
+  ref.torque_body = Eigen::Vector3d::Zero();
+  ref.has_torque_feedforward = false;
   ref.yaw = msg.yaw;
   ref.valid = true;
   return ref;

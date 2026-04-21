@@ -41,6 +41,7 @@ class FlatReference:
     acceleration: Array3
     yaw: float
     body_rates: Array3
+    angular_acceleration: Array3
     body_torque: Array3
 
 
@@ -182,16 +183,24 @@ def body_rates_from_quaternion_samples(
     return axis * (angle / dt)
 
 
-def body_torque_from_rates(
+def angular_acceleration_from_rates(
     body_rates_now: np.ndarray,
     body_rates_next: np.ndarray,
     dt: float,
-    inertia_diag: np.ndarray,
 ) -> np.ndarray:
     omega_now = np.asarray(body_rates_now, dtype=float)
     omega_next = np.asarray(body_rates_next, dtype=float)
+    return np.zeros(3, dtype=float) if dt <= 1e-9 else (omega_next - omega_now) / dt
+
+
+def body_torque_from_kinematics(
+    body_rates_now: np.ndarray,
+    angular_acceleration: np.ndarray,
+    inertia_diag: np.ndarray,
+) -> np.ndarray:
+    omega_now = np.asarray(body_rates_now, dtype=float)
+    omega_dot = np.asarray(angular_acceleration, dtype=float)
     inertia = np.diag(np.asarray(inertia_diag, dtype=float))
-    omega_dot = np.zeros(3, dtype=float) if dt <= 1e-9 else (omega_next - omega_now) / dt
     return inertia @ omega_dot + np.cross(omega_now, inertia @ omega_now)
 
 
@@ -582,7 +591,12 @@ class FlatnessReferencePublisher(Node):
 
         body_rates = body_rates_from_quaternion_samples(q_now, q_next, dt)
         body_rates_next = body_rates_from_quaternion_samples(q_next, q_next2, dt)
-        body_torque = body_torque_from_rates(body_rates, body_rates_next, dt, self.inertia_diag)
+        angular_acceleration = angular_acceleration_from_rates(body_rates, body_rates_next, dt)
+        body_torque = body_torque_from_kinematics(
+            body_rates,
+            angular_acceleration,
+            self.inertia_diag,
+        )
 
         return FlatReference(
             position=reference_now.position,
@@ -590,6 +604,7 @@ class FlatnessReferencePublisher(Node):
             acceleration=reference_now.acceleration,
             yaw=yaw,
             body_rates=body_rates,
+            angular_acceleration=angular_acceleration,
             body_torque=body_torque,
         )
 
@@ -619,6 +634,7 @@ class FlatnessReferencePublisher(Node):
         assign_xyz(msg.velocity_ned, reference.velocity)
         assign_xyz(msg.acceleration_ned, reference.acceleration)
         assign_xyz(msg.body_rates_frd, reference.body_rates)
+        assign_xyz(msg.angular_acceleration_frd, reference.angular_acceleration)
         assign_xyz(msg.body_torque_frd, reference.body_torque)
         msg.yaw = float(reference.yaw)
 

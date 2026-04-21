@@ -138,7 +138,7 @@ void TanhController::computePosition(const VehicleState& state, const Trajectory
   const Eigen::Vector3d acceleration_feedback = pos_gains_.K_Acceleration.cwiseProduct(linear_acceleration_ned);
 
   const auto thrustOverMassFromDisturbance = [&](const Eigen::Vector3d& disturbance) {
-    return disturbance + gravity_ned + velocity_feedback + acceleration_feedback + ref.acceleration_ned;
+    return disturbance + gravity_ned + velocity_feedback + acceleration_feedback - ref.acceleration_ned;
   };
 
   Eigen::Vector3d thrust_over_mass_control = thrustOverMassFromDisturbance(velocity_disturbance_filtered);
@@ -150,7 +150,7 @@ void TanhController::computePosition(const VehicleState& state, const Trajectory
   const Eigen::Vector3d desired_thrust_control = mass_ * thrust_over_mass_control;
   const Eigen::Vector3d desired_thrust_observer = mass_ * thrust_over_mass_observer;
 
-  const Eigen::Vector3d velocity_error_hat_dot_ned = (-desired_thrust_observer / mass_) + gravity_ned + velocity_disturbance_raw;
+  const Eigen::Vector3d velocity_error_hat_dot_ned = (-desired_thrust_observer / mass_) + gravity_ned + velocity_disturbance_raw - ref.acceleration_ned;
   velocity_error_hat_ned_ += dt * velocity_error_hat_dot_ned;
 
   if (thrust_vec_ned) {
@@ -165,7 +165,7 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   // Trajectory feedforward is expressed in the reference-body frame and must be
   // rotated into the current body frame before it is used by the inner loop.
   const Eigen::Vector3d desired_angular_velocity_body = attitude_reference.has_angular_velocity_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_velocity_body) : Eigen::Vector3d::Zero();
-  const Eigen::Vector3d desired_angular_acceleration_body = Eigen::Vector3d::Zero();
+  const Eigen::Vector3d desired_angular_acceleration_body = attitude_reference.has_angular_acceleration_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.angular_acceleration_body) : Eigen::Vector3d::Zero();
 
   Eigen::Quaterniond q_error = q_d.conjugate() * q;
   if (q_error.w() < 0.0) {
@@ -184,7 +184,9 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Vector3d tanh_angular_velocity_error = tanh_feedback(angular_velocity_error_body, att_gains_.K_AngularVelocity, Eigen::Vector3d::Ones());
   const Eigen::Vector3d angular_velocity_control_term = att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
   const Eigen::Vector3d angular_acceleration_error_body = state.angular_acceleration_body - desired_angular_acceleration_body;
-  const Eigen::Vector3d feedforward_torque = attitude_reference.has_torque_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.torque_body) : Eigen::Vector3d::Zero();
+  const Eigen::Vector3d angular_acceleration_feedforward_torque = inertia_ * desired_angular_acceleration_body;
+  const Eigen::Vector3d additive_feedforward_torque = attitude_reference.has_torque_feedforward ? rotateReferenceBodyVectorToCurrentBody(q, q_d, attitude_reference.torque_body) : Eigen::Vector3d::Zero();
+  const Eigen::Vector3d feedforward_torque = angular_acceleration_feedforward_torque + additive_feedforward_torque;
   const Eigen::Vector3d angular_acceleration_feedback = inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(angular_acceleration_error_body);
   const auto desiredTorqueFromDisturbance = [&](const Eigen::Vector3d& angular_velocity_disturbance) {
     return feedforward_torque + omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term - angular_acceleration_feedback;
@@ -193,7 +195,7 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Vector3d desired_torque_control = desiredTorqueFromDisturbance(angular_velocity_disturbance_filtered);
   const Eigen::Vector3d desired_torque_observer = desiredTorqueFromDisturbance(angular_velocity_disturbance_raw);
 
-  const Eigen::Vector3d angular_velocity_error_hat_dot_body = (-inertia_inv * omega_cross_inertia_omega) + inertia_inv * desired_torque_observer + angular_velocity_disturbance_raw;
+  const Eigen::Vector3d angular_velocity_error_hat_dot_body = (-inertia_inv * omega_cross_inertia_omega) + inertia_inv * desired_torque_observer + angular_velocity_disturbance_raw - desired_angular_acceleration_body;
   angular_velocity_error_hat_body_ += dt * angular_velocity_error_hat_dot_body;
 
   if (torque_body) {

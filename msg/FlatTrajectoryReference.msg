@@ -3,5 +3,6 @@ geometry_msgs/Point position_ned
 geometry_msgs/Vector3 velocity_ned
 geometry_msgs/Vector3 acceleration_ned
 geometry_msgs/Vector3 body_rates_frd
+geometry_msgs/Vector3 angular_acceleration_frd
 geometry_msgs/Vector3 body_torque_frd
 float32 yaw
