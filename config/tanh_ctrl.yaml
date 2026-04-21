@@ -46,10 +46,10 @@ tanh_ctrl:
     attitude:
       tilt:
         M_Angle: 1.0
-        K_Angle: 18.0
-        M_AngularVelocity: 40.0
-        K_AngularVelocity: 1.2
-        K_AngularAcceleration: 1.15
+        K_Angle: 20.0
+        M_AngularVelocity: 42.0
+        K_AngularVelocity: 1.25
+        K_AngularAcceleration: 1.18
         observer:
           P_AngularVelocity: 20.5
           L_AngularVelocity: 1.0
