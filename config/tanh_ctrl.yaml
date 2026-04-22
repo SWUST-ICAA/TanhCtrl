@@ -41,7 +41,7 @@ tanh_ctrl:
         observer:
           P_V: 4.2
           L_V: 2.5
-      max_tilt_deg: 25.0
+      max_tilt_deg: 35.0
 
     attitude:
       tilt:
@@ -49,10 +49,10 @@ tanh_ctrl:
         K_Angle: 20.0
         M_AngularVelocity: 42.0
         K_AngularVelocity: 1.25
-        K_AngularAcceleration: 1.18
+        K_AngularAcceleration: 1.182
         observer:
           P_AngularVelocity: 20.5
-          L_AngularVelocity: 1.0
+          L_AngularVelocity: 1.3
       yaw:
         M_Angle: 1.0
         K_Angle: 2.0
@@ -67,5 +67,5 @@ tanh_ctrl:
       linear:
         horizontal_cutoff_hz: 10.0
         vertical_cutoff_hz: 15.0
-      velocity_disturbance_cutoff_hz: 30.0
-      angular_velocity_disturbance_cutoff_hz: 30.0
+      velocity_disturbance_cutoff_hz: 50.0
+      angular_velocity_disturbance_cutoff_hz: 50.0

@@ -41,9 +41,6 @@ FlatnessAttitudeFeedforward computeFlatnessAttitudeFeedforward(const VehicleStat
   const Eigen::Vector3d omega_ned = current_body_to_ned_q * omega_body;
   const Eigen::Vector3d current_h_omega_ned = omega_ned.cross(z_body_ned);
 
-  // In this controller's NED/FRD convention, translational dynamics use
-  // a = g - (T/m) z_B. This is the sign-adapted form of the paper's
-  // differential-flatness feedforward, whose equations use +T z_B.
   const double thrust_over_mass_dot = -attitude_reference.jerk_ned.dot(z_body_ned);
   const double thrust_over_mass_ddot =
       -attitude_reference.snap_ned.dot(z_body_ned) - current_h_omega_ned.dot(attitude_reference.jerk_ned);
@@ -233,9 +230,9 @@ void TanhController::computeAttitude(const VehicleState& state, const AttitudeRe
   const Eigen::Matrix3d inertia_inv = inertia_.inverse();
   const Eigen::Vector3d tanh_angular_velocity_error = tanh_feedback(angular_velocity_error_body, att_gains_.K_AngularVelocity, Eigen::Vector3d::Ones());
   const Eigen::Vector3d angular_velocity_control_term = att_gains_.M_AngularVelocity.cwiseProduct(tanh_angular_velocity_error);
-  const Eigen::Vector3d angular_acceleration_error_body = state.angular_acceleration_body - desired_angular_acceleration_body;
   const Eigen::Vector3d angular_acceleration_feedforward_torque = inertia_ * desired_angular_acceleration_body;
-  const Eigen::Vector3d angular_acceleration_feedback = inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(angular_acceleration_error_body);
+  const Eigen::Vector3d angular_acceleration_feedback =
+      inertia_ * att_gains_.K_AngularAcceleration.cwiseProduct(state.angular_acceleration_body);
   const auto desiredTorqueFromDisturbance = [&](const Eigen::Vector3d& angular_velocity_disturbance) {
     return angular_acceleration_feedforward_torque + omega_cross_inertia_omega - inertia_ * angular_velocity_disturbance - inertia_ * angular_velocity_control_term - angular_acceleration_feedback;
   };

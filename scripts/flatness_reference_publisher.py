@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import math
 import threading
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import rclpy
@@ -32,6 +32,17 @@ class TrajectorySample:
     position: Array3
     velocity: Array3
     acceleration: Array3
+    jerk: Array3
+    snap: Array3
+
+
+@dataclass(frozen=True)
+class TimeScaling:
+    path_time: float
+    path_time_dot: float
+    path_time_ddot: float
+    path_time_dddot: float
+    path_time_ddddot: float
 
 
 @dataclass(frozen=True)
@@ -106,6 +117,8 @@ def apply_tilt(
     position_local: Array3,
     velocity_local: Array3,
     acceleration_local: Array3,
+    jerk_local: Array3,
+    snap_local: Array3,
     center_ned: Array3,
     tilt_angle_rad: float,
 ) -> TrajectorySample:
@@ -114,6 +127,8 @@ def apply_tilt(
         position=center_ned + rotation @ position_local,
         velocity=rotation @ velocity_local,
         acceleration=rotation @ acceleration_local,
+        jerk=rotation @ jerk_local,
+        snap=rotation @ snap_local,
     )
 
 
@@ -125,16 +140,23 @@ def circle_ned(
     z_ned: float,
 ) -> TrajectorySample:
     omega = omega_from_speed(radius, speed)
+    angle = omega * t
     x = center_ned[0] + radius * math.cos(omega * t)
     y = center_ned[1] + radius * math.sin(omega * t)
-    vx = -radius * omega * math.sin(omega * t)
-    vy = radius * omega * math.cos(omega * t)
-    ax = -radius * omega * omega * math.cos(omega * t)
-    ay = -radius * omega * omega * math.sin(omega * t)
+    vx = -radius * omega * math.sin(angle)
+    vy = radius * omega * math.cos(angle)
+    ax = -radius * omega * omega * math.cos(angle)
+    ay = -radius * omega * omega * math.sin(angle)
+    jx = radius * omega * omega * omega * math.sin(angle)
+    jy = -radius * omega * omega * omega * math.cos(angle)
+    sx = radius * omega * omega * omega * omega * math.cos(angle)
+    sy = radius * omega * omega * omega * omega * math.sin(angle)
     return TrajectorySample(
         position=np.array([x, y, z_ned], dtype=float),
         velocity=np.array([vx, vy, 0.0], dtype=float),
         acceleration=np.array([ax, ay, 0.0], dtype=float),
+        jerk=np.array([jx, jy, 0.0], dtype=float),
+        snap=np.array([sx, sy, 0.0], dtype=float),
     )
 
 
@@ -147,16 +169,24 @@ def figure_eight_ned(
     z_ned: float,
 ) -> TrajectorySample:
     omega = omega_from_period(period_s)
-    x = center_ned[0] + x_amplitude * math.sin(omega * t)
-    y = center_ned[1] + y_amplitude * math.sin(2.0 * omega * t)
-    vx = x_amplitude * omega * math.cos(omega * t)
-    vy = 2.0 * y_amplitude * omega * math.cos(2.0 * omega * t)
-    ax = -x_amplitude * omega * omega * math.sin(omega * t)
-    ay = -4.0 * y_amplitude * omega * omega * math.sin(2.0 * omega * t)
+    angle = omega * t
+    angle_2 = 2.0 * angle
+    x = center_ned[0] + x_amplitude * math.sin(angle)
+    y = center_ned[1] + y_amplitude * math.sin(angle_2)
+    vx = x_amplitude * omega * math.cos(angle)
+    vy = 2.0 * y_amplitude * omega * math.cos(angle_2)
+    ax = -x_amplitude * omega * omega * math.sin(angle)
+    ay = -4.0 * y_amplitude * omega * omega * math.sin(angle_2)
+    jx = -x_amplitude * omega * omega * omega * math.cos(angle)
+    jy = -8.0 * y_amplitude * omega * omega * omega * math.cos(angle_2)
+    sx = x_amplitude * omega * omega * omega * omega * math.sin(angle)
+    sy = 16.0 * y_amplitude * omega * omega * omega * omega * math.sin(angle_2)
     return TrajectorySample(
         position=np.array([x, y, z_ned], dtype=float),
         velocity=np.array([vx, vy, 0.0], dtype=float),
         acceleration=np.array([ax, ay, 0.0], dtype=float),
+        jerk=np.array([jx, jy, 0.0], dtype=float),
+        snap=np.array([sx, sy, 0.0], dtype=float),
     )
 
 
@@ -168,22 +198,47 @@ def tilted_circle_ned(
     tilt_angle_rad: float,
 ) -> TrajectorySample:
     omega = omega_from_speed(radius, speed)
+    angle = omega * t
     position_local = np.array(
-        [radius * math.cos(omega * t), radius * math.sin(omega * t), 0.0], dtype=float
+        [radius * math.cos(angle), radius * math.sin(angle), 0.0], dtype=float
     )
     velocity_local = np.array(
-        [-radius * omega * math.sin(omega * t), radius * omega * math.cos(omega * t), 0.0],
+        [-radius * omega * math.sin(angle), radius * omega * math.cos(angle), 0.0],
         dtype=float,
     )
     acceleration_local = np.array(
         [
-            -radius * omega * omega * math.cos(omega * t),
-            -radius * omega * omega * math.sin(omega * t),
+            -radius * omega * omega * math.cos(angle),
+            -radius * omega * omega * math.sin(angle),
             0.0,
         ],
         dtype=float,
     )
-    return apply_tilt(position_local, velocity_local, acceleration_local, center_ned, tilt_angle_rad)
+    jerk_local = np.array(
+        [
+            radius * omega * omega * omega * math.sin(angle),
+            -radius * omega * omega * omega * math.cos(angle),
+            0.0,
+        ],
+        dtype=float,
+    )
+    snap_local = np.array(
+        [
+            radius * omega * omega * omega * omega * math.cos(angle),
+            radius * omega * omega * omega * omega * math.sin(angle),
+            0.0,
+        ],
+        dtype=float,
+    )
+    return apply_tilt(
+        position_local,
+        velocity_local,
+        acceleration_local,
+        jerk_local,
+        snap_local,
+        center_ned,
+        tilt_angle_rad,
+    )
 
 
 def tilted_figure_eight_ned(
@@ -195,27 +250,53 @@ def tilted_figure_eight_ned(
     tilt_angle_rad: float,
 ) -> TrajectorySample:
     omega = omega_from_period(period_s)
+    angle = omega * t
+    angle_2 = 2.0 * angle
     position_local = np.array(
-        [x_amplitude * math.sin(omega * t), y_amplitude * math.sin(2.0 * omega * t), 0.0],
+        [x_amplitude * math.sin(angle), y_amplitude * math.sin(angle_2), 0.0],
         dtype=float,
     )
     velocity_local = np.array(
         [
-            x_amplitude * omega * math.cos(omega * t),
-            2.0 * y_amplitude * omega * math.cos(2.0 * omega * t),
+            x_amplitude * omega * math.cos(angle),
+            2.0 * y_amplitude * omega * math.cos(angle_2),
             0.0,
         ],
         dtype=float,
     )
     acceleration_local = np.array(
         [
-            -x_amplitude * omega * omega * math.sin(omega * t),
-            -4.0 * y_amplitude * omega * omega * math.sin(2.0 * omega * t),
+            -x_amplitude * omega * omega * math.sin(angle),
+            -4.0 * y_amplitude * omega * omega * math.sin(angle_2),
             0.0,
         ],
         dtype=float,
     )
-    return apply_tilt(position_local, velocity_local, acceleration_local, center_ned, tilt_angle_rad)
+    jerk_local = np.array(
+        [
+            -x_amplitude * omega * omega * omega * math.cos(angle),
+            -8.0 * y_amplitude * omega * omega * omega * math.cos(angle_2),
+            0.0,
+        ],
+        dtype=float,
+    )
+    snap_local = np.array(
+        [
+            x_amplitude * omega * omega * omega * omega * math.sin(angle),
+            16.0 * y_amplitude * omega * omega * omega * omega * math.sin(angle_2),
+            0.0,
+        ],
+        dtype=float,
+    )
+    return apply_tilt(
+        position_local,
+        velocity_local,
+        acceleration_local,
+        jerk_local,
+        snap_local,
+        center_ned,
+        tilt_angle_rad,
+    )
 
 
 class FlatnessReferencePublisher(Node):
@@ -363,19 +444,22 @@ class FlatnessReferencePublisher(Node):
             return np.array([self.radius, 0.0, 0.0], dtype=float)
         return np.zeros(3, dtype=float)
 
-    def reparameterized_kinematics(self, elapsed_s: float) -> Tuple[float, float, float]:
+    def reparameterized_kinematics(self, elapsed_s: float) -> TimeScaling:
         elapsed = max(float(elapsed_s), 0.0)
         ramp = float(self.speed_ramp_time_s)
         if ramp <= 0.0:
-            return elapsed, 1.0, 0.0
+            return TimeScaling(elapsed, 1.0, 0.0, 0.0, 0.0)
         if elapsed >= ramp:
-            return elapsed - 0.5 * ramp, 1.0, 0.0
+            return TimeScaling(elapsed - 0.5 * ramp, 1.0, 0.0, 0.0, 0.0)
 
         # Integrate a linear speed scale from 0 to 1 over the ramp interval.
-        path_time = (elapsed * elapsed) / (2.0 * ramp)
-        path_time_dot = elapsed / ramp
-        path_time_ddot = 1.0 / ramp
-        return path_time, path_time_dot, path_time_ddot
+        return TimeScaling(
+            path_time=(elapsed * elapsed) / (2.0 * ramp),
+            path_time_dot=elapsed / ramp,
+            path_time_ddot=1.0 / ramp,
+            path_time_dddot=0.0,
+            path_time_ddddot=0.0,
+        )
 
     def sample_path(self, path_time_s: float) -> TrajectorySample:
         if self.active_center_ned is None:
@@ -423,18 +507,37 @@ class FlatnessReferencePublisher(Node):
         return yaw_from_velocity_ned(velocity_ned, fallback_yaw)
 
     def sample_reference_state(self, elapsed_s: float) -> TrajectorySample:
-        # Apply the chain rule so speed_ramp_time_s affects both feedforward velocity and acceleration.
-        path_time, path_time_dot, path_time_ddot = self.reparameterized_kinematics(elapsed_s)
-        path_sample = self.sample_path(path_time)
+        # Apply the chain rule so speed_ramp_time_s affects all flatness derivatives.
+        time_scaling = self.reparameterized_kinematics(elapsed_s)
+        path_sample = self.sample_path(time_scaling.path_time)
+        path_time_dot = time_scaling.path_time_dot
+        path_time_ddot = time_scaling.path_time_ddot
+        path_time_dddot = time_scaling.path_time_dddot
+        path_time_ddddot = time_scaling.path_time_ddddot
+
         velocity = path_sample.velocity * path_time_dot
         acceleration = (
             path_sample.acceleration * (path_time_dot ** 2)
             + path_sample.velocity * path_time_ddot
         )
+        jerk = (
+            path_sample.jerk * (path_time_dot ** 3)
+            + 3.0 * path_sample.acceleration * path_time_dot * path_time_ddot
+            + path_sample.velocity * path_time_dddot
+        )
+        snap = (
+            path_sample.snap * (path_time_dot ** 4)
+            + 6.0 * path_sample.jerk * (path_time_dot ** 2) * path_time_ddot
+            + 3.0 * path_sample.acceleration * (path_time_ddot ** 2)
+            + 4.0 * path_sample.acceleration * path_time_dot * path_time_dddot
+            + path_sample.velocity * path_time_ddddot
+        )
         return TrajectorySample(
             position=path_sample.position,
             velocity=velocity,
             acceleration=acceleration,
+            jerk=jerk,
+            snap=snap,
         )
 
     def sample_flat_reference(self, elapsed_s: float) -> FlatReference:
@@ -442,20 +545,11 @@ class FlatnessReferencePublisher(Node):
         reference_m1 = self.sample_reference_state(elapsed_s - dt)
         reference_now = self.sample_reference_state(elapsed_s)
         reference_p1 = self.sample_reference_state(elapsed_s + dt)
-        reference_p2 = self.sample_reference_state(elapsed_s + 2.0 * dt)
 
         fallback_yaw = self.locked_yaw_rad if self.yaw_mode == "fixed" else 0.0
         yaw = self.yaw_reference(reference_now.velocity, fallback_yaw)
         yaw_m1 = self.yaw_reference(reference_m1.velocity, yaw)
         yaw_p1 = self.yaw_reference(reference_p1.velocity, yaw)
-        yaw_p2 = self.yaw_reference(reference_p2.velocity, yaw_p1)
-
-        jerk = (reference_p1.acceleration - reference_m1.acceleration) / (2.0 * dt)
-        snap = (
-            reference_p1.acceleration
-            - 2.0 * reference_now.acceleration
-            + reference_m1.acceleration
-        ) / (dt ** 2)
         yaw_rate = angle_delta(yaw_p1, yaw_m1) / (2.0 * dt)
         yaw_acceleration = (
             angle_delta(yaw_p1, yaw) - angle_delta(yaw, yaw_m1)
@@ -465,8 +559,8 @@ class FlatnessReferencePublisher(Node):
             position=reference_now.position,
             velocity=reference_now.velocity,
             acceleration=reference_now.acceleration,
-            jerk=jerk,
-            snap=snap,
+            jerk=reference_now.jerk,
+            snap=reference_now.snap,
             yaw=yaw,
             yaw_rate=yaw_rate,
             yaw_acceleration=yaw_acceleration,
