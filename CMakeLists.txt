@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.8)
 
 project(tanh_ctrl)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -19,8 +22,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FlatTrajectoryReference.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
-
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 add_library(tanh_ctrl_common
   src/common.cpp
@@ -62,7 +63,9 @@ add_library(tanh_ctrl_node_lib
 
 target_link_libraries(tanh_ctrl_node_lib
   tanh_ctrl_core
-  "${cpp_typesupport_target}"
+)
+rosidl_target_interfaces(tanh_ctrl_node_lib
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )
 ament_target_dependencies(tanh_ctrl_node_lib
   geometry_msgs

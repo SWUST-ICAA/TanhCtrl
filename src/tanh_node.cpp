@@ -288,6 +288,13 @@ void TanhNode::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedP
   is_armed_ = (msg->arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED);
   is_offboard_ = (msg->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD);
 
+  if (!is_armed_) {
+    saw_disarmed_status_ = true;
+    manual_arm_detected_ = false;
+  } else if (!was_armed && saw_disarmed_status_) {
+    manual_arm_detected_ = true;
+  }
+
   if (is_offboard_) {
     offboard_ever_engaged_ = true;
   }
@@ -498,20 +505,20 @@ void TanhNode::publishStartTrackingOnce() {
 }
 
 void TanhNode::handleMissionPreconditions() {
-  if (!is_offboard_ && mission_state_ != WAIT_FOR_OFFBOARD) {
-    const MissionState previous_state = mission_state_;
-    resetMissionProgress();
-    updateCurrentHoldReference();
-    mission_state_ = WAIT_FOR_OFFBOARD;
-    logMissionTransition(this->get_logger(), previous_state, mission_state_, "offboard lost");
-  }
-
-  if (!is_armed_ && mission_state_ != WAIT_FOR_OFFBOARD && mission_state_ != WAIT_FOR_ARMING) {
+  if (!is_armed_ && mission_state_ != WAIT_FOR_ARMING) {
     const MissionState previous_state = mission_state_;
     resetMissionProgress();
     updateCurrentHoldReference();
     mission_state_ = WAIT_FOR_ARMING;
     logMissionTransition(this->get_logger(), previous_state, mission_state_, "vehicle disarmed");
+  }
+
+  if (manual_arm_detected_ && is_armed_ && !is_offboard_ && mission_state_ != WAIT_FOR_OFFBOARD) {
+    const MissionState previous_state = mission_state_;
+    resetMissionProgress();
+    updateCurrentHoldReference();
+    mission_state_ = WAIT_FOR_OFFBOARD;
+    logMissionTransition(this->get_logger(), previous_state, mission_state_, "waiting for offboard");
   }
 }
 
@@ -525,7 +532,7 @@ void TanhNode::maybeSendAutomaticRequests(uint64_t now_us) {
     return;
   }
 
-  if (enable_auto_offboard_ && !is_offboard_ &&
+  if (enable_auto_offboard_ && manual_arm_detected_ && is_armed_ && !is_offboard_ &&
       requestDue(now_us, last_offboard_request_us_, mission_request_interval_s_)) {
     publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0f, 6.0f, 0.0f);
     last_offboard_request_us_ = now_us;
@@ -544,22 +551,26 @@ void TanhNode::updateMissionStateMachine(uint64_t now_us) {
       updateCurrentHoldReference();
       if (is_offboard_) {
         last_offboard_request_us_ = 0;
-        logMissionTransition(this->get_logger(), mission_state_, WAIT_FOR_ARMING, "offboard enabled");
-        mission_state_ = WAIT_FOR_ARMING;
+        updateHoldReference(mission_takeoff_target_z_);
+        resetControllerRuntimeState();
+        resetTakeoffProgress();
+        logMissionTransition(this->get_logger(), mission_state_, TAKEOFF, "offboard enabled");
+        mission_state_ = TAKEOFF;
       }
       break;
 
     case WAIT_FOR_ARMING:
       updateCurrentHoldReference();
-      if (!is_offboard_) {
-        logMissionTransition(this->get_logger(), mission_state_, WAIT_FOR_OFFBOARD, "waiting for offboard");
+      if (manual_arm_detected_ && is_armed_ && !is_offboard_) {
+        last_arm_request_us_ = 0;
+        logMissionTransition(this->get_logger(), mission_state_, WAIT_FOR_OFFBOARD, "manual arm detected");
         mission_state_ = WAIT_FOR_OFFBOARD;
-      } else if (is_armed_) {
+      } else if (manual_arm_detected_ && is_armed_ && is_offboard_) {
         last_arm_request_us_ = 0;
         updateHoldReference(mission_takeoff_target_z_);
         resetControllerRuntimeState();
         resetTakeoffProgress();
-        logMissionTransition(this->get_logger(), mission_state_, TAKEOFF, "armed");
+        logMissionTransition(this->get_logger(), mission_state_, TAKEOFF, "manual arm detected in offboard");
         mission_state_ = TAKEOFF;
       }
       break;

@@ -95,11 +95,13 @@ class TanhNode : public rclcpp::Node {
   uint64_t last_reference_receive_us_{0};
   bool is_armed_{false};
   bool is_offboard_{false};
+  bool saw_disarmed_status_{false};
+  bool manual_arm_detected_{false};
   bool offboard_ever_engaged_{false};
   bool exit_requested_{false};
   uint8_t last_nav_state_{0};
   double current_yaw_{0.0};
-  MissionState mission_state_{WAIT_FOR_OFFBOARD};
+  MissionState mission_state_{WAIT_FOR_ARMING};
   bool takeoff_reached_{false};
   uint64_t takeoff_reached_since_us_{0};
   bool start_tracking_sent_{false};
